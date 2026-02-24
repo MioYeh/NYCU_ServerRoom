@@ -16,6 +16,7 @@
 const Auth = {
     // 內部快取：目前使用者的 profile（從 Firestore 取得）
     _cachedProfile: null,
+    _authResolved: false,
 
     /**
      * 登入（使用 Firebase Auth email/password）
@@ -99,7 +100,12 @@ const Auth = {
 
     // 是否已登入（檢查 localStorage 快取）
     isLoggedIn() {
-        return this.getCurrentUser() !== null;
+        if (this.isFirebaseLoggedIn()) return true;
+        // Firebase 尚未完成 session 還原前，允許用 localStorage 做短暫過渡
+        if (!this._authResolved) {
+            return this.getCurrentUser() !== null;
+        }
+        return false;
     },
 
     // 是否為管理員
@@ -115,6 +121,23 @@ const Auth = {
             return false;
         }
         return true;
+    },
+
+    // 是否在登入頁
+    isLoginPage() {
+        return document.getElementById('loginForm') !== null;
+    },
+
+    // 處理 Firebase Auth 狀態變更後的導頁
+    handlePostAuthStateChange() {
+        const onLoginPage = this.isLoginPage();
+        if (this.isFirebaseLoggedIn() && onLoginPage) {
+            window.location.href = 'dashboard.html';
+            return;
+        }
+        if (!this.isFirebaseLoggedIn() && !onLoginPage) {
+            window.location.href = 'index.html';
+        }
     },
 
     // 認證守衛：需要管理員身份
@@ -255,25 +278,30 @@ const Auth = {
 };
 
 // ===== 監聽 Firebase Auth 狀態變更 =====
-let _authInitialized = false;
 auth.onAuthStateChanged(async (firebaseUser) => {
     if (firebaseUser) {
         // 使用者已登入，同步 profile（支援 email 回退查找）
-        const profile = await Auth._getProfile(firebaseUser.uid, firebaseUser.email);
-        if (profile) {
-            Auth._cachedProfile = { uid: firebaseUser.uid, ...profile };
-            localStorage.setItem('bmi_current_user', JSON.stringify(Auth._cachedProfile));
+        let profile = await Auth._getProfile(firebaseUser.uid, firebaseUser.email);
+
+        // Firestore 尚無 profile 時補建，避免 refresh 後角色/名稱遺失
+        if (!profile) {
+            profile = {
+                email: firebaseUser.email,
+                role: 'user',
+                displayName: (firebaseUser.email || 'user').split('@')[0]
+            };
+            await db.collection('users').doc(firebaseUser.uid).set(profile);
         }
-        _authInitialized = true;
+
+        Auth._cachedProfile = { uid: firebaseUser.uid, ...profile };
+        localStorage.setItem('bmi_current_user', JSON.stringify(Auth._cachedProfile));
+        Auth._authResolved = true;
+        Auth.handlePostAuthStateChange();
     } else {
-        // Firebase Auth session 尚未恢復時也會觸發 null
-        // 只有在已初始化之後收到 null 才代表真正登出
-        if (_authInitialized) {
-            Auth._cachedProfile = null;
-            localStorage.removeItem('bmi_current_user');
-            window.location.href = 'index.html';
-        }
-        _authInitialized = true;
+        Auth._cachedProfile = null;
+        localStorage.removeItem('bmi_current_user');
+        Auth._authResolved = true;
+        Auth.handlePostAuthStateChange();
     }
 });
 
@@ -281,6 +309,7 @@ auth.onAuthStateChanged(async (firebaseUser) => {
 function initAuthNav() {
     const user = Auth.getCurrentUser();
     if (!user) return;
+    if (document.querySelector('.nav-user')) return;
     // 找到 nav-links 並加入使用者資訊
     const navLinks = document.querySelector('.nav-links');
     if (navLinks) {
