@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>繳費紀錄 - NYCU BMI 機房管理</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script>
+        try {
+            var _u = JSON.parse(localStorage.getItem('bmi_current_user'));
+            if (_u && _u.role === 'admin') document.documentElement.classList.add('is-admin');
+        } catch(e) {}
+    </script>
+    <style>
+        .role-admin-text { display: none; }
+        .role-user-text  { display: inline; }
+        .is-admin .role-admin-text { display: inline; }
+        .is-admin .role-user-text  { display: none; }
+    </style>
+</head>
+<body>
+    <!-- 頂部導航列 -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <i class="fas fa-server"></i>
+            <span>NYCU BMI 機房管理</span>
+        </div>
+        <div class="nav-links">
+            <a href="dashboard.html" class="nav-link"><i class="fas fa-th-large"></i> 機櫃總覽</a>
+            <a href="apply.html" class="nav-link"><i class="fas fa-file-alt"></i> 設備申請</a>
+            <a href="admin.html" class="nav-link">
+                <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理審核</span>
+                <span class="role-user-text"><i class="fas fa-list-check"></i> 申請進度</span>
+            </a>
+            <a href="payment.html" class="nav-link active"><i class="fas fa-credit-card"></i> 繳費紀錄</a>
+        </div>
+    </nav>
+
+    <header class="header">
+        <div class="header-left">
+            <h1><i class="fas fa-credit-card"></i> 繳費管理</h1>
+        </div>
+        <div class="header-right">
+            <div class="admin-stats">
+                <span class="badge badge-warning" id="unpaidCount">0 待繳費</span>
+                <span class="badge badge-success" id="paidCount">0 已繳費</span>
+                <span class="badge badge-info" id="totalRevenue">總金額 $0</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="page-content">
+        <!-- 篩選工具列 -->
+        <div class="admin-toolbar">
+            <div class="toolbar-left">
+                <div class="tab-group">
+                    <button class="tab-btn active" onclick="setPaymentFilter('all', this)">
+                        全部 <span class="tab-count" id="payTabAll">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="setPaymentFilter('unpaid', this)">
+                        <i class="fas fa-clock"></i> 待繳費 <span class="tab-count" id="payTabUnpaid">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="setPaymentFilter('paid', this)">
+                        <i class="fas fa-check"></i> 已繳費 <span class="tab-count" id="payTabPaid">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="setPaymentFilter('overdue', this)">
+                        <i class="fas fa-exclamation-triangle"></i> 逾期 <span class="tab-count" id="payTabOverdue">0</span>
+                    </button>
+                </div>
+            </div>
+            <div class="toolbar-right">
+                <input type="text" id="paymentSearch" placeholder="搜尋申請人/設備名..." class="search-input" oninput="renderPaymentList()">
+            </div>
+        </div>
+
+        <!-- 費用圖表儀表板 -->
+        <div class="chart-dashboard" id="chartDashboard">
+            <div class="chart-header">
+                <h2><i class="fas fa-chart-pie"></i> 費用收取狀況總覽</h2>
+            </div>
+            <div class="chart-stats-row">
+                <div class="chart-stat-card stat-total">
+                    <div class="stat-icon"><i class="fas fa-coins"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="statTotalFee">$0</div>
+                        <div class="stat-label">應收總額</div>
+                    </div>
+                </div>
+                <div class="chart-stat-card stat-collected">
+                    <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="statCollected">$0</div>
+                        <div class="stat-label">已收金額</div>
+                    </div>
+                </div>
+                <div class="chart-stat-card stat-outstanding">
+                    <div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="statOutstanding">$0</div>
+                        <div class="stat-label">未收金額</div>
+                    </div>
+                </div>
+                <div class="chart-stat-card stat-rate">
+                    <div class="stat-icon"><i class="fas fa-percentage"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="statRate">0%</div>
+                        <div class="stat-label">收繳率</div>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-card-title"><i class="fas fa-chart-doughnut"></i> 繳費狀態分佈</div>
+                    <div class="chart-canvas-wrap">
+                        <canvas id="paymentStatusChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-title"><i class="fas fa-chart-bar"></i> 各單位費用統計</div>
+                    <div class="chart-canvas-wrap">
+                        <canvas id="unitFeeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 一般使用者繳費面板 -->
+        <div class="user-payment-panel" id="userPaymentPanel" style="display:none">
+            <div class="payment-panel-card">
+                <div class="payment-panel-header">
+                    <div class="payment-panel-title">
+                        <h2><i class="fas fa-wallet"></i> 我的待繳費用</h2>
+                        <span class="badge badge-warning" id="userUnpaidBadge">0 筆待繳</span>
+                    </div>
+                </div>
+                <div class="payment-mode-section">
+                    <div class="payment-mode-label"><i class="fas fa-sliders-h"></i> 繳費範圍</div>
+                    <div class="payment-mode-options">
+                        <label class="radio-card active" id="modeAllLabel">
+                            <input type="radio" name="payMode" value="all" checked onchange="updatePaymentMode()">
+                            <div class="radio-card-content">
+                                <i class="fas fa-coins"></i>
+                                <div class="radio-card-text">
+                                    <span class="radio-card-title">繳清全部費用</span>
+                                    <span class="radio-card-amount" id="modeAllAmount">NT$ 0</span>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="radio-card" id="modePartialLabel">
+                            <input type="radio" name="payMode" value="partial" onchange="updatePaymentMode()">
+                            <div class="radio-card-content">
+                                <i class="fas fa-calendar-check"></i>
+                                <div class="radio-card-text">
+                                    <span class="radio-card-title">繳費到指定日期</span>
+                                    <span class="radio-card-amount" id="modePartialAmount">選擇日期後顯示</span>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="partial-date-section" id="partialDateSection" style="display:none">
+                        <label for="payUpToDate"><i class="fas fa-calendar-alt"></i> 繳費到：</label>
+                        <input type="month" id="payUpToDate" onchange="updatePartialPayment()">
+                        <div class="partial-date-hint" id="partialDateHint"></div>
+                    </div>
+                </div>
+                <div class="payment-items-preview" id="paymentItemsPreview"></div>
+                <div class="payment-panel-footer">
+                    <div class="payment-total-row">
+                        <span class="payment-total-label">應繳金額</span>
+                        <span class="payment-total-amount" id="userPayTotal">NT$ 0</span>
+                    </div>
+                    <button class="btn btn-success btn-lg" id="userBatchPayBtn" onclick="openBatchPayModal()" disabled>
+                        <i class="fas fa-money-bill-wave"></i> <span id="userPayBtnText">前往繳費</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 繳費列表 -->
+        <div class="payment-table-wrap">
+            <table class="data-table" id="paymentTable">
+                <thead>
+                    <tr>
+                        <th>申請編號</th>
+                        <th>申請人</th>
+                        <th>所屬單位</th>
+                        <th>設備名稱</th>
+                        <th>機櫃位置</th>
+                        <th>費用 (NTD)</th>
+                        <th>繳費狀態</th>
+                        <th>繳費日期</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="paymentBody">
+                </tbody>
+            </table>
+            <div class="empty-state" id="paymentEmpty" style="display:none">
+                <i class="fas fa-receipt"></i>
+                <p>尚無繳費紀錄</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- 繳費彈窗 -->
+    <div class="modal-overlay" id="payModal" onclick="closePayModal(event)">
+        <div class="modal-content">
+            <div class="modal-header bg-success">
+                <h3><i class="fas fa-money-bill-wave"></i> 繳費確認</h3>
+                <button class="btn-close" onclick="closePayModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="payModalInfo"></div>
+                <input type="hidden" id="payAppId" value="">
+                <input type="hidden" id="payBatchMode" value="">
+                <input type="hidden" id="payBatchData" value="">
+                <form id="payForm" onsubmit="handlePaySubmit(event)">
+                    <div class="form-group">
+                        <label for="payMethod">繳費方式 *</label>
+                        <select id="payMethod" required>
+                            <option value="">-- 選擇方式 --</option>
+                            <option value="transfer">銀行轉帳</option>
+                            <option value="cash">現金繳費</option>
+                            <option value="check">支票</option>
+                            <option value="budget">校內經費核銷</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="payRef">繳費憑證/備註</label>
+                        <input type="text" id="payRef" placeholder="轉帳帳號末五碼 或 收據編號">
+                    </div>
+                    <div class="form-actions-row">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-check"></i> 確認繳費
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closePayModalDirect()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 繳費詳情彈窗 -->
+    <div class="modal-overlay" id="payDetailModal" onclick="closePayDetailModal(event)">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3><i class="fas fa-receipt"></i> 繳費詳情</h3>
+                <button class="btn-close" onclick="closePayDetailModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body" id="payDetailContent"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closePayDetailModalDirect()">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/payment.js"></script>
+</body>
+</html>

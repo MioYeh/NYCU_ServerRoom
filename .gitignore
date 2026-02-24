@@ -1,0 +1,12 @@
+# Firebase 設定（含 API Key）
+js/firebase-config.js
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Node
+node_modules/

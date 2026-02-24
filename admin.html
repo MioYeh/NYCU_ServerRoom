@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>申請進度 - NYCU BMI 機房管理</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        try {
+            var _u = JSON.parse(localStorage.getItem('bmi_current_user'));
+            if (_u && _u.role === 'admin') {
+                document.documentElement.classList.add('is-admin');
+                document.title = '管理審核 - NYCU BMI 機房管理';
+            }
+        } catch(e) {}
+    </script>
+    <style>
+        /* 依角色即時切換文字，避免閃爍 */
+        .role-admin-text { display: none; }
+        .role-user-text  { display: inline; }
+        .is-admin .role-admin-text { display: inline; }
+        .is-admin .role-user-text  { display: none; }
+    </style>
+</head>
+<body>
+    <!-- 頂部導航列 -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <i class="fas fa-server"></i>
+            <span>NYCU BMI 機房管理</span>
+        </div>
+        <div class="nav-links">
+            <a href="dashboard.html" class="nav-link"><i class="fas fa-th-large"></i> 機櫃總覽</a>
+            <a href="apply.html" class="nav-link"><i class="fas fa-file-alt"></i> 設備申請</a>
+            <a href="admin.html" class="nav-link active">
+                <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理審核</span>
+                <span class="role-user-text"><i class="fas fa-list-check"></i> 申請進度</span>
+            </a>
+            <a href="payment.html" class="nav-link"><i class="fas fa-credit-card"></i> 繳費紀錄</a>
+        </div>
+    </nav>
+
+    <header class="header">
+        <div class="header-left">
+            <h1>
+                <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理員審核</span>
+                <span class="role-user-text"><i class="fas fa-list-check"></i> 我的申請進度</span>
+            </h1>
+        </div>
+        <div class="header-right">
+            <div class="admin-stats">
+                <span class="badge badge-warning" id="pendingCount">0 待審核</span>
+                <span class="badge badge-success" id="approvedCount">0 已通過</span>
+                <span class="badge badge-danger" id="rejectedCount">0 已拒絕</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="page-content">
+        <!-- 篩選工具列 -->
+        <div class="admin-toolbar">
+            <div class="toolbar-left">
+                <div class="tab-group">
+                    <button class="tab-btn active" data-filter="all" onclick="setAdminFilter('all', this)">
+                        全部 <span class="tab-count" id="tabAll">0</span>
+                    </button>
+                    <button class="tab-btn" data-filter="pending" onclick="setAdminFilter('pending', this)">
+                        <i class="fas fa-clock"></i> 待審核 <span class="tab-count" id="tabPending">0</span>
+                    </button>
+                    <button class="tab-btn" data-filter="approved" onclick="setAdminFilter('approved', this)">
+                        <i class="fas fa-check"></i> 已通過 <span class="tab-count" id="tabApproved">0</span>
+                    </button>
+                    <button class="tab-btn" data-filter="rejected" onclick="setAdminFilter('rejected', this)">
+                        <i class="fas fa-times"></i> 已拒絕 <span class="tab-count" id="tabRejected">0</span>
+                    </button>
+                    <button class="tab-btn" data-filter="installed" onclick="setAdminFilter('installed', this)">
+                        <i class="fas fa-server"></i> 已上架 <span class="tab-count" id="tabInstalled">0</span>
+                    </button>
+                </div>
+            </div>
+            <div class="toolbar-right">
+                <input type="text" id="adminSearch" placeholder="搜尋申請人/設備名..." class="search-input" oninput="renderAdminList()">
+            </div>
+        </div>
+
+        <!-- 申請列表 -->
+        <div class="admin-list" id="adminList">
+            <div class="empty-state">
+                <i class="fas fa-inbox"></i>
+                <p>尚無申請紀錄</p>
+            </div>
+        </div>
+
+        <!-- 使用者管理區域（僅管理員可見）-->
+        <div class="user-mgmt-section" id="userMgmtSection" style="display:none">
+            <div class="user-mgmt-header">
+                <h2><i class="fas fa-users-cog"></i> 使用者管理</h2>
+                <button class="btn btn-primary" onclick="openUserModal()">
+                    <i class="fas fa-user-plus"></i> 新增使用者
+                </button>
+            </div>
+            <div class="user-table-wrap">
+                <table class="data-table" id="userTable">
+                    <thead>
+                        <tr>
+                            <th>使用者</th>
+                            <th>角色</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- 使用者新增/編輯彈窗 -->
+    <div class="modal-overlay" id="userModal" onclick="closeUserModal(event)">
+        <div class="modal-content user-form-modal">
+            <div class="modal-header">
+                <h3 id="userModalTitle"><i class="fas fa-user-plus"></i> 新增使用者</h3>
+                <button class="btn-close" onclick="closeUserModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="userForm" onsubmit="handleUserFormSubmit(event)">
+                    <input type="hidden" id="userEditOriginal" value="">
+                    <div class="form-group">
+                        <label for="userFormUsername">電子郵件 *</label>
+                        <input type="email" id="userFormUsername" required placeholder="輸入電子郵件" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="userFormDisplayName">顯示名稱 *</label>
+                        <input type="text" id="userFormDisplayName" required placeholder="例如：王大名">
+                    </div>
+                    <div class="form-group">
+                        <label for="userFormPassword">密碼 *</label>
+                        <input type="password" id="userFormPassword" required placeholder="輸入密碼（至少 6 字元）" autocomplete="new-password" minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="userFormRole">角色 *</label>
+                        <select id="userFormRole" required>
+                            <option value="user">一般使用者</option>
+                            <option value="admin">管理員</option>
+                        </select>
+                    </div>
+                    <div class="form-actions-row">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-save"></i> 儲存
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeUserModalDirect()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 審核彈窗 -->
+    <div class="modal-overlay" id="reviewModal" onclick="closeReviewModal(event)">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3><i class="fas fa-clipboard-check"></i> 審核申請單</h3>
+                <button class="btn-close" onclick="closeReviewModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body" id="reviewContent"></div>
+            <div class="modal-footer" id="reviewActions"></div>
+        </div>
+    </div>
+
+    <!-- 指派位置彈窗 -->
+    <div class="modal-overlay" id="assignModal" onclick="closeAssignModal(event)">
+        <div class="modal-content">
+            <div class="modal-header bg-success">
+                <h3><i class="fas fa-map-marker-alt"></i> 指派機櫃位置</h3>
+                <button class="btn-close" onclick="closeAssignModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="assignForm" onsubmit="handleAssignSubmit(event)">
+                    <input type="hidden" id="assignAppId" value="">
+                    <div class="form-group">
+                        <label for="assignCabinet">指定機櫃 *</label>
+                        <select id="assignCabinet" required onchange="updateAssignHint()">
+                            <option value="">-- 選擇機櫃 --</option>
+                            <option value="0">機櫃 A</option>
+                            <option value="1">機櫃 B</option>
+                            <option value="2">機櫃 C</option>
+                            <option value="3">機櫃 D</option>
+                            <option value="4">機櫃 E</option>
+                            <option value="5">機櫃 F</option>
+                            <option value="6">機櫃 G</option>
+                            <option value="7">機櫃 H</option>
+                        </select>
+                        <small id="assignHint" class="hint"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="assignStartU">起始 U 位置 * (1 = 底部)</label>
+                        <input type="number" id="assignStartU" min="1" max="42" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="assignIP">分配 IP 位址</label>
+                        <input type="text" id="assignIP" placeholder="140.113.x.x">
+                    </div>
+                    <div class="form-group">
+                        <label for="assignFee">費用 (NTD)</label>
+                        <input type="number" id="assignFee" min="0" value="0" placeholder="0" style="font-weight:700;">
+                        <small id="feeCalcHint" class="hint" style="color:#2563eb;white-space:pre-line;"></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="assignAdminNotes">管理員備註</label>
+                        <textarea id="assignAdminNotes" rows="2" placeholder="審核備註..."></textarea>
+                    </div>
+                    <div class="form-actions-row">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-check-circle"></i> 核准並指派位置
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeAssignModalDirect()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

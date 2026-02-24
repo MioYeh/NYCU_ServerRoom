@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>設備申請 - NYCU BMI 機房管理</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        try {
+            var _u = JSON.parse(localStorage.getItem('bmi_current_user'));
+            if (_u && _u.role === 'admin') document.documentElement.classList.add('is-admin');
+        } catch(e) {}
+    </script>
+    <style>
+        .role-admin-text { display: none; }
+        .role-user-text  { display: inline; }
+        .is-admin .role-admin-text { display: inline; }
+        .is-admin .role-user-text  { display: none; }
+    </style>
+</head>
+<body>
+    <!-- 頂部導航列 -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <i class="fas fa-server"></i>
+            <span>NYCU BMI 機房管理</span>
+        </div>
+        <div class="nav-links">
+            <a href="dashboard.html" class="nav-link"><i class="fas fa-th-large"></i> 機櫃總覽</a>
+            <a href="apply.html" class="nav-link active"><i class="fas fa-file-alt"></i> 設備申請</a>
+            <a href="admin.html" class="nav-link">
+                <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理審核</span>
+                <span class="role-user-text"><i class="fas fa-list-check"></i> 申請進度</span>
+            </a>
+            <a href="payment.html" class="nav-link"><i class="fas fa-credit-card"></i> 繳費紀錄</a>
+        </div>
+    </nav>
+
+    <header class="header">
+        <div class="header-left">
+            <h1><i class="fas fa-file-alt"></i> 設備上架申請單</h1>
+        </div>
+        <div class="header-right">
+            <span class="page-desc">填寫申請表後，管理員審核通過即可上架設備</span>
+        </div>
+    </header>
+
+    <main class="page-content">
+        <div class="page-grid">
+            <!-- 左側：申請表單 -->
+            <div class="card card-form">
+                <div class="card-header">
+                    <h2><i class="fas fa-pen-to-square"></i> 填寫申請單</h2>
+                </div>
+                <form id="applyForm" onsubmit="handleApplySubmit(event)">
+                    <div class="form-section">
+                        <h3 class="section-title"><i class="fas fa-user"></i> 申請人資訊</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applicantName">申請人姓名 *</label>
+                                <input type="text" id="applicantName" required placeholder="例如：王大名">
+                            </div>
+                            <div class="form-group">
+                                <label for="applicantUnit">所屬單位 *</label>
+                                <input type="text" id="applicantUnit" required placeholder="例如：王教授實驗室">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applicantEmail">聯絡信箱 *</label>
+                                <input type="email" id="applicantEmail" required placeholder="email@nycu.edu.tw">
+                            </div>
+                            <div class="form-group">
+                                <label for="applicantPhone">聯絡電話</label>
+                                <input type="tel" id="applicantPhone" placeholder="09xx-xxx-xxx">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="section-title"><i class="fas fa-server"></i> 設備資訊</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applyDeviceName">設備名稱 *</label>
+                                <input type="text" id="applyDeviceName" required placeholder="例如：GPU Server 01">
+                            </div>
+                            <div class="form-group">
+                                <label for="applyDeviceModel">設備型號</label>
+                                <input type="text" id="applyDeviceModel" placeholder="例如：Dell PowerEdge R740">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applyUSize">所需大小 (U) *</label>
+                                <select id="applyUSize" required>
+                                    <option value="">-- 選擇 --</option>
+                                    <option value="1">1U</option>
+                                    <option value="2">2U</option>
+                                    <option value="3">3U</option>
+                                    <option value="4">4U</option>
+                                    <option value="5">5U</option>
+                                    <option value="6">6U</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="applyPower">預估用電 (W)</label>
+                                <input type="number" id="applyPower" placeholder="例如：750" min="0">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applyPreferCabinet">希望機櫃位置</label>
+                                <select id="applyPreferCabinet">
+                                    <option value="">不指定（由管理員安排）</option>
+                                    <option value="0">機櫃 A</option>
+                                    <option value="1">機櫃 B</option>
+                                    <option value="2">機櫃 C</option>
+                                    <option value="3">機櫃 D</option>
+                                    <option value="4">機櫃 E</option>
+                                    <option value="5">機櫃 F</option>
+                                    <option value="6">機櫃 G</option>
+                                    <option value="7">機櫃 H</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="applyIP">需要 IP 位址</label>
+                                <select id="applyIP">
+                                    <option value="need">需要（由管理員分配）</option>
+                                    <option value="have">已有固定 IP</option>
+                                    <option value="no">不需要</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="applyExistingIP">已有 IP（如適用）</label>
+                            <input type="text" id="applyExistingIP" placeholder="例如：140.113.x.x">
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="section-title"><i class="fas fa-calendar"></i> 使用期間</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="applyStartDate">預計上架日期 *</label>
+                                <input type="date" id="applyStartDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="applyEndDate">使用到期日 *</label>
+                                <input type="date" id="applyEndDate" required>
+                            </div>
+                        </div>
+                        <div class="fee-estimate-box" id="feeEstimateBox" style="display:none;">
+                            <div class="fee-estimate-header"><i class="fas fa-calculator"></i> 預估費用</div>
+                            <div class="fee-estimate-amount" id="feeEstimateAmount"></div>
+                            <div class="fee-estimate-detail" id="feeEstimateDetail"></div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h3 class="section-title"><i class="fas fa-comment"></i> 其他</h3>
+                        <div class="form-group">
+                            <label for="applyPurpose">使用目的 *</label>
+                            <textarea id="applyPurpose" rows="3" required placeholder="請簡述設備用途，例如：深度學習模型訓練、資料庫服務..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="applyNotes">備註</label>
+                            <textarea id="applyNotes" rows="2" placeholder="其他特殊需求或備註..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-actions-row">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-paper-plane"></i> 送出申請
+                        </button>
+                        <button type="reset" class="btn btn-secondary btn-lg">
+                            <i class="fas fa-eraser"></i> 清除表單
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 右側：我的申請紀錄 -->
+            <div class="card card-list">
+                <div class="card-header">
+                    <h2><i class="fas fa-list-check"></i> 我的申請紀錄</h2>
+                    <div class="card-header-actions">
+                        <input type="text" id="mySearchInput" placeholder="搜尋..." class="search-input" oninput="renderMyApplications()">
+                    </div>
+                </div>
+                <div class="application-list" id="myApplicationList">
+                    <div class="empty-state">
+                        <i class="fas fa-inbox"></i>
+                        <p>尚無申請紀錄</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 申請詳情彈窗 -->
+    <div class="modal-overlay" id="applyDetailModal" onclick="closeApplyDetail(event)">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-alt"></i> 申請單詳情</h3>
+                <button class="btn-close" onclick="closeApplyDetailDirect()">&times;</button>
+            </div>
+            <div class="modal-body" id="applyDetailContent"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeApplyDetailDirect()">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/apply.js"></script>
+</body>
+</html>

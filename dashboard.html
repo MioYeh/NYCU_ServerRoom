@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYCU BMI 機房機櫃管理系統</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        try {
+            var _u = JSON.parse(localStorage.getItem('bmi_current_user'));
+            if (_u && _u.role === 'admin') document.documentElement.classList.add('is-admin');
+        } catch(e) {}
+    </script>
+    <style>
+        .role-admin-text { display: none; }
+        .role-user-text  { display: inline; }
+        .is-admin .role-admin-text { display: inline; }
+        .is-admin .role-user-text  { display: none; }
+    </style>
+</head>
+<body>
+    <!-- 頂部導航列 -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <i class="fas fa-server"></i>
+            <span>NYCU BMI 機房管理</span>
+        </div>
+        <div class="nav-links">
+            <a href="dashboard.html" class="nav-link active"><i class="fas fa-th-large"></i> 機櫃總覽</a>
+            <a href="apply.html" class="nav-link"><i class="fas fa-file-alt"></i> 設備申請</a>
+            <a href="admin.html" class="nav-link">
+                <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理審核</span>
+                <span class="role-user-text"><i class="fas fa-list-check"></i> 申請進度</span>
+            </a>
+            <a href="payment.html" class="nav-link"><i class="fas fa-credit-card"></i> 繳費紀錄</a>
+        </div>
+    </nav>
+
+    <header class="header">
+        <div class="header-left">
+            <h1><i class="fas fa-th-large"></i> 機櫃總覽</h1>
+        </div>
+        <div class="header-right" id="headerActions">
+            <button class="btn btn-primary admin-only-btn" onclick="openFormPanel()" style="display:none">
+                <i class="fas fa-plus"></i> 新增設備
+            </button>
+            <button class="btn btn-secondary admin-only-btn" onclick="exportData()" style="display:none">
+                <i class="fas fa-download"></i> 匯出資料
+            </button>
+            <button class="btn btn-secondary admin-only-btn" onclick="importData()" style="display:none">
+                <i class="fas fa-upload"></i> 匯入資料
+            </button>
+            <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="handleImportFile(event)">
+        </div>
+    </header>
+
+    <!-- 篩選與統計列 -->
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <label>篩選擁有者：</label>
+            <select id="ownerFilter" onchange="filterByOwner(this.value)">
+                <option value="">-- 全部顯示 --</option>
+            </select>
+            <button class="btn btn-small" onclick="clearFilter()">
+                <i class="fas fa-times"></i> 清除篩選
+            </button>
+        </div>
+        <div class="toolbar-right">
+            <div class="stats">
+                <span class="stat-item"><i class="fas fa-server"></i> 設備總數：<strong id="statTotal">0</strong></span>
+                <span class="stat-item"><i class="fas fa-th"></i> 已使用 U 數：<strong id="statUsed">0</strong></span>
+                <span class="stat-item"><i class="fas fa-battery-half"></i> 使用率：<strong id="statRate">0%</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 擁有者圖例 -->
+    <div class="legend-bar" id="legendBar"></div>
+
+    <!-- 機櫃主區域 -->
+    <main class="cabinet-container" id="cabinetContainer"></main>
+
+    <!-- 設備資訊浮動提示 -->
+    <div class="tooltip" id="tooltip"></div>
+
+    <!-- 側邊表單面板 -->
+    <div class="overlay" id="overlay" onclick="closeFormPanel()"></div>
+    <div class="form-panel" id="formPanel">
+        <div class="form-panel-header">
+            <h2 id="formTitle"><i class="fas fa-plus-circle"></i> 新增設備</h2>
+            <button class="btn-close" onclick="closeFormPanel()">&times;</button>
+        </div>
+        <form id="deviceForm" onsubmit="handleFormSubmit(event)">
+            <input type="hidden" id="editId" value="">
+
+            <div class="form-group">
+                <label for="deviceName">設備名稱 *</label>
+                <input type="text" id="deviceName" required placeholder="例如：Web Server 01">
+            </div>
+
+            <div class="form-group">
+                <label for="cabinetSelect">機櫃 *</label>
+                <select id="cabinetSelect" required onchange="updateAvailableSlots()">
+                    <option value="">-- 選擇機櫃 --</option>
+                    <option value="0">機櫃 A</option>
+                    <option value="1">機櫃 B</option>
+                    <option value="2">機櫃 C</option>
+                    <option value="3">機櫃 D</option>
+                    <option value="4">機櫃 E</option>
+                    <option value="5">機櫃 F</option>
+                    <option value="6">機櫃 G</option>
+                    <option value="7">機櫃 H</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="startU">起始 U 位置 * (1 = 底部)</label>
+                <input type="number" id="startU" min="1" max="42" required placeholder="1-42">
+                <small id="availableHint" class="hint"></small>
+            </div>
+
+            <div class="form-group">
+                <label for="uSize">設備大小 (U) *</label>
+                <select id="uSize" required>
+                    <option value="1">1U</option>
+                    <option value="2" selected>2U</option>
+                    <option value="3">3U</option>
+                    <option value="4">4U</option>
+                    <option value="5">5U</option>
+                    <option value="6">6U</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="owner">擁有者 *</label>
+                <input type="text" id="owner" required placeholder="例如：王教授實驗室" list="ownerList">
+                <datalist id="ownerList"></datalist>
+            </div>
+
+            <div class="form-group">
+                <label for="contact">聯絡人</label>
+                <input type="text" id="contact" placeholder="聯絡人姓名">
+            </div>
+
+            <div class="form-group">
+                <label for="email">聯絡信箱</label>
+                <input type="email" id="email" placeholder="email@example.com">
+            </div>
+
+            <div class="form-group">
+                <label for="ip">IP 位址</label>
+                <input type="text" id="ip" placeholder="例如：140.113.x.x">
+            </div>
+
+            <div class="form-group">
+                <label for="description">備註</label>
+                <textarea id="description" rows="3" placeholder="設備備註說明..."></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-block">
+                    <i class="fas fa-save"></i> <span id="formSubmitText">新增設備</span>
+                </button>
+                <button type="button" class="btn btn-danger btn-block" id="deleteBtn" style="display:none" onclick="deleteDevice()">
+                    <i class="fas fa-trash"></i> 刪除設備
+                </button>
+                <button type="button" class="btn btn-secondary btn-block" onclick="closeFormPanel()">取消</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 設備詳情彈窗 -->
+    <div class="modal-overlay" id="detailModal" onclick="closeDetailModal(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-info-circle"></i> 設備詳細資訊</h3>
+                <button class="btn-close" onclick="closeDetailModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body" id="detailContent"></div>
+            <div class="modal-footer" id="detailModalFooter">
+                <button class="btn btn-danger admin-only-btn" onclick="deleteFromDetailModal()" style="display:none">
+                    <i class="fas fa-trash"></i> 刪除
+                </button>
+                <button class="btn btn-primary admin-only-btn" onclick="editFromDetailModal()" style="display:none">
+                    <i class="fas fa-edit"></i> 編輯
+                </button>
+                <button class="btn btn-secondary" onclick="closeDetailModalDirect()">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/db.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
