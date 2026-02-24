@@ -165,29 +165,42 @@ NYCU_Server_Room_Web/
   依角色動態調整導覽列連結文字
 ```
 
-### 預設帳號
+### Firebase 管理員帳號設定
 
-| 帳號 | 密碼 | 角色 | 說明 |
-|------|------|------|------|
-| `admin` | `admin` | 管理員 | 預設管理員，不可刪除 |
+本專案使用 **Firebase Authentication + Firestore**，管理員權限不是看 Authentication 裡「帳號名稱」，而是看 Firestore `users/{uid}` 內的 `role` 欄位。
 
-> 首次使用時會自動建立預設 `admin` 帳號。可在「管理審核」頁面的使用者管理區塊新增更多帳號。
+1. 先在 Firebase Console → **Authentication** 建立帳號（Email/Password）。
+2. 用該帳號登入一次網站（讓系統建立 `users/{uid}` 基本資料）。
+3. 到 Firebase Console → **Firestore Database** → `users` collection，找到該使用者文件（文件 ID 應為該帳號的 `uid`）。
+4. 將文件內容設成（或至少包含）以下欄位：
+
+```json
+{
+  "email": "your-admin@example.com",
+  "displayName": "系統管理員",
+  "role": "admin"
+}
+```
+
+5. 重新整理頁面或重新登入，`Auth.isAdmin()` 會變成 `true`。
+
+> 補充：若你已經用 email 當文件 ID 建過舊資料，`js/auth.js` 會在登入時自動搬移到 `users/{uid}`。
 
 ### Auth API 參考
 
 | 方法 | 說明 |
 |------|------|
-| `Auth.login(username, password)` | 登入，回傳 `{ success, user/message }` |
+| `Auth.login(email, password)` | 登入，回傳 `{ success, user/message }` |
 | `Auth.logout()` | 登出並導向登入頁 |
-| `Auth.getCurrentUser()` | 取得目前登入者 `{ username, role, displayName }` |
+| `Auth.getCurrentUser()` | 取得目前登入者 `{ uid, email, role, displayName }` |
 | `Auth.isLoggedIn()` | 是否已登入 |
 | `Auth.isAdmin()` | 是否為管理員 |
 | `Auth.requireAuth()` | 認證守衛，未登入自動跳轉 |
 | `Auth.requireAdmin()` | 管理員守衛 |
 | `Auth.getUsers()` | 取得所有使用者列表 |
-| `Auth.addUser(username, password, role, displayName)` | 新增使用者 |
-| `Auth.updateUser(original, username, password, role, displayName)` | 更新使用者 |
-| `Auth.deleteUser(username)` | 刪除使用者（`admin` 不可刪） |
+| `Auth.addUser(email, password, role, displayName)` | 新增使用者（建立 Firebase Auth + Firestore profile） |
+| `Auth.updateUser(uid, role, displayName)` | 更新使用者角色/名稱 |
+| `Auth.deleteUser(uid)` | 刪除使用者 Firestore profile |
 
 ---
 
