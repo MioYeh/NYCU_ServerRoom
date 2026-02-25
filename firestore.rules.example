@@ -1,0 +1,81 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // 使用者 profile：本人可讀；本人可更新 displayName；僅 admin 可改 role 或管理他人
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      // create 分兩種：
+      // 1) 本人首次登入建立基本資料（固定 role=user，不能自提權）
+      // 2) 管理員在後台新增使用者時，代為建立 profile（可指定角色）
+      allow create: if isAdmin()
+        || (
+          isOwner(uid)
+          && request.resource.data.role == 'user'
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.keys().hasOnly(['email', 'displayName', 'role'])
+        );
+
+      // 本人只能改 displayName；admin 可改任何欄位（包含 role）
+      allow update: if isAdmin()
+        || (
+          isOwner(uid)
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.keys().hasOnly(['email', 'displayName', 'role'])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ===== 目前專案資料結構相容規則（array in single doc） =====
+    // collections/devices -> doc(all): {items:[...]} 仍限制 admin 可寫
+    // collections/applications -> doc(all): {items:[...]} 允許登入使用者寫入（讓一般使用者可送申請）
+    // 注意：applications 是整包陣列覆蓋，放寬為登入可寫僅是過渡方案，建議後續改為 applications/{appId}。
+    match /collections/devices {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /collections/applications {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /collections/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ===== 建議未來改版（更細權限） =====
+    // 改成 applications/{appId}, devices/{deviceId} 後，可以啟用這種模式：
+    // - 一般使用者：create 自己的 application、讀自己的 application
+    // - admin：審核/修改所有 application、管理 devices
+    // 範例（先註解保留）
+    // match /applications/{appId} {
+    //   allow create: if isSignedIn()
+    //     && request.resource.data.submittedBy == request.auth.uid;
+    //   allow read: if isAdmin()
+    //     || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
+    //   allow update, delete: if isAdmin();
+    // }
+    // match /devices/{deviceId} {
+    //   allow read: if isSignedIn();
+    //   allow write: if isAdmin();
+    // }
+  }
+}

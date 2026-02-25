@@ -52,7 +52,11 @@ const DB = {
             await db.collection('collections').doc('applications').set({ items: applications });
         } catch (e) {
             console.error('DB.saveApplications error:', e);
-            alert('儲存申請資料失敗，請檢查網路連線。');
+            if (e && (e.code === 'permission-denied' || String(e.message || '').includes('Missing or insufficient permissions'))) {
+                alert('儲存申請資料失敗：目前帳號沒有寫入申請資料的權限，請聯絡管理員檢查 Firestore Rules。');
+            } else {
+                alert('儲存申請資料失敗，請檢查網路連線。');
+            }
         }
     },
 
