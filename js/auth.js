@@ -12,6 +12,20 @@
  *      { email: "admin@example.com", role: "admin", displayName: "系統管理員" }
  */
 
+
+// 取得 secondary Auth（用於管理員建立新帳號，避免影響目前登入狀態）
+function getSecondaryAuth() {
+    if (typeof secondaryAuth !== 'undefined' && secondaryAuth) {
+        return secondaryAuth;
+    }
+
+    // 若 firebase-config.js 未預先建立 secondaryAuth，這裡自動補建
+    const appName = 'secondary';
+    const existing = firebase.apps.find(app => app.name === appName);
+    const secondaryApp = existing || firebase.initializeApp(firebase.app().options, appName);
+    return secondaryApp.auth();
+}
+
 // ===== 認證工具函式 =====
 const Auth = {
     // 內部快取：目前使用者的 profile（從 Firestore 取得）
@@ -207,7 +221,8 @@ const Auth = {
     async addUser(email, password, role, displayName) {
         try {
             // 透過 secondaryAuth 建立帳號，不會影響主實例的 auth.currentUser
-            const credential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+            const secondaryAuthInstance = getSecondaryAuth();
+            const credential = await secondaryAuthInstance.createUserWithEmailAndPassword(email, password);
             const newUid = credential.user.uid;
 
             // 在 Firestore 中建立使用者 profile
@@ -218,7 +233,7 @@ const Auth = {
             });
 
             // 立即登出 secondary 實例（僅用於建立帳號）
-            await secondaryAuth.signOut();
+            await secondaryAuthInstance.signOut();
 
             return { success: true, message: '使用者已建立' };
         } catch (error) {
