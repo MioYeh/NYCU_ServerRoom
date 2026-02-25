@@ -1,6 +1,6 @@
-# NYCU_ServerRoom# NYCU BMI 機房機櫃管理系統
+# NYCU BMI 機房機櫃管理系統
 
-> NYCU BMI Server Room Management System — 純前端靜態網站，使用 HTML / CSS / JavaScript + localStorage 實現機櫃設備管理、設備申請、審核、繳費與使用者認證。
+> NYCU BMI Server Room Management System — 純前端靜態網站，使用 HTML / CSS / JavaScript 並整合 Firebase Authentication + Firestore。
 
 ---
 
@@ -186,6 +186,22 @@ NYCU_Server_Room_Web/
 
 > 補充：若你已經用 email 當文件 ID 建過舊資料，`js/auth.js` 會在登入時自動搬移到 `users/{uid}`。
 
+### Firestore Security Rules（建議）
+
+已提供可直接參考的規則範例：`firestore.rules.example`。
+
+- 只有登入者可讀取系統資料。
+- `users/{uid}`：
+  - 本人可建立基本資料（固定 `role: "user"`，不可自提權）
+  - 管理員可代為建立使用者 profile（對應後台新增使用者流程）
+  - 本人僅可修改 `displayName`
+  - 僅管理員可修改 `role` 或刪除帳號 profile
+- `collections/devices`：僅管理員可寫。
+- `collections/applications`：為支援一般使用者送件，範例暫採「登入即可寫」。
+
+> 注意：`collections/applications` 目前是整包陣列覆蓋，放寬為登入可寫僅是過渡方案。建議盡快改為 `applications/{appId}`，再用 Rules 依 `submittedBy == request.auth.uid` 精準控管。
+
+
 ### Auth API 參考
 
 | 方法 | 說明 |
@@ -237,14 +253,14 @@ NYCU_Server_Room_Web/
 
 ## 資料儲存
 
-所有資料使用瀏覽器 `localStorage` 儲存，無需後端伺服器。
+主要資料儲存在 **Firestore**，登入狀態由 **Firebase Authentication** 管理；`localStorage` 僅用於前端快取目前使用者資訊。
 
 | Key | 說明 |
 |-----|------|
-| `bmi_server_room_devices` | 機櫃設備資料（JSON 陣列） |
-| `bmi_applications` | 設備申請紀錄（JSON 陣列） |
-| `bmi_users` | 使用者帳號列表（JSON 陣列） |
-| `bmi_current_user` | 目前登入者 Session（JSON 物件） |
+| `collections/devices` | Firestore 文件，欄位 `items` 存設備陣列 |
+| `collections/applications` | Firestore 文件，欄位 `items` 存申請陣列 |
+| `users/{uid}` | Firestore 使用者 profile（`email`, `displayName`, `role`） |
+| `bmi_current_user` | localStorage 快取目前登入者（非權限判斷來源） |
 
 ### 設備資料結構
 
@@ -268,7 +284,7 @@ NYCU_Server_Room_Web/
 ```json
 {
   "id": 1001,
-  "submittedBy": "admin",
+  "submittedBy": "<firebase_uid>",
   "applicantName": "王大名",
   "applicantUnit": "王教授實驗室",
   "applicantEmail": "wang@nycu.edu.tw",
@@ -309,8 +325,7 @@ NYCU_Server_Room_Web/
 
 ```json
 {
-  "username": "admin",
-  "password": "admin",
+  "email": "admin@example.com",
   "role": "admin",
   "displayName": "系統管理員"
 }
@@ -361,9 +376,9 @@ npx serve .
 
 ### 3. 首次使用
 
-1. 使用預設帳號 `admin` / `admin` 登入
-2. 進入「管理審核」頁面底部的「使用者管理」新增其他使用者
-3. 開始使用各項功能
+1. 在 Firebase Console 的 Authentication 建立 Email/Password 帳號
+2. 首次登入後到 Firestore `users/{uid}` 設定 `role`（管理員請設為 `admin`）
+3. 進入系統後可用「管理審核」頁面的使用者管理新增其他帳號
 
 ---
 
@@ -373,8 +388,8 @@ npx serve .
 - **樣式**：原生 CSS，使用 CSS Variables 統一色彩主題
 - **圖示**：Font Awesome 6.4（CDN）
 - **圖表**：Chart.js 4.4（CDN，用於繳費管理頁面的甜甜圈圖與長條圖）
-- **資料持久化**：瀏覽器 localStorage
-- **認證機制**：前端 Session（localStorage），頁面載入時自動驗證
+- **資料持久化**：Firestore
+- **認證機制**：Firebase Authentication（Email/Password） + Firestore profile
 - **RWD 響應式**：支援桌面與行動裝置
 - **動畫效果**：CSS animation（登入抖動、Modal 淡入、成功提示等）
 
