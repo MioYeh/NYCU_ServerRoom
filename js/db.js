@@ -60,6 +60,28 @@ const DB = {
         }
     },
 
+    // ===== 所屬單位 (ownerUnits) =====
+    async getOwnerUnits() {
+        try {
+            const doc = await db.collection('collections').doc('ownerUnits').get();
+            if (doc.exists && doc.data().items) {
+                return doc.data().items;
+            }
+        } catch (e) {
+            console.error('DB.getOwnerUnits error:', e);
+        }
+        return null; // null 表示尚未初始化，使用預設值
+    },
+
+    async saveOwnerUnits(units) {
+        try {
+            await db.collection('collections').doc('ownerUnits').set({ items: units });
+        } catch (e) {
+            console.error('DB.saveOwnerUnits error:', e);
+            alert('儲存單位資料失敗，請檢查網路連線。');
+        }
+    },
+
     // ===== 使用者 (users) - 已遷移至 Firebase Authentication =====
     // 使用者 profile 現在存在 Firestore users/{uid} collection 中
     // 由 auth.js 中的 Auth 物件管理

@@ -7,6 +7,15 @@ let devices = [];
 let adminFilter = 'all';
 let currentReviewId = null;
 
+// ===== 展開/收合區塊 =====
+function toggleSection(bodyId) {
+    const body = document.getElementById(bodyId);
+    const icon = document.getElementById(bodyId + 'Icon');
+    if (!body) return;
+    body.classList.toggle('collapsed');
+    if (icon) icon.classList.toggle('collapsed');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     initAdminPage();      // 先依角色調整 UI，避免閃爍
     await loadData();
@@ -670,5 +679,152 @@ async function handleUserFormSubmit(e) {
 // 頁面載入時初始化使用者管理
 document.addEventListener('DOMContentLoaded', () => {
     // 短暫延遲以確保 auth.js 已載入
-    setTimeout(initUserManagement, 100);
+    setTimeout(() => {
+        initUserManagement();
+        initUnitManagement();
+    }, 100);
 });
+
+// ===== 所屬單位管理 =====
+let ownerUnits = []; // { name, color }
+
+function initUnitManagement() {
+    if (typeof Auth !== 'undefined' && Auth.isAdmin()) {
+        const section = document.getElementById('unitMgmtSection');
+        if (section) {
+            section.style.display = 'block';
+            loadAndRenderUnits();
+        }
+    }
+    // 色碼即時顯示
+    const colorInput = document.getElementById('unitFormColor');
+    if (colorInput) {
+        colorInput.addEventListener('input', () => {
+            document.getElementById('unitColorHex').textContent = colorInput.value;
+        });
+    }
+}
+
+async function loadAndRenderUnits() {
+    const stored = await DB.getOwnerUnits();
+    if (stored && stored.length > 0) {
+        ownerUnits = stored;
+    } else {
+        // 以 OWNER_COLORS 預設值初始化
+        ownerUnits = Object.entries(OWNER_COLORS).map(([name, color]) => ({ name, color }));
+        await DB.saveOwnerUnits(ownerUnits);
+    }
+    renderUnitTable();
+}
+
+function renderUnitTable() {
+    const tbody = document.getElementById('unitTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    ownerUnits.forEach((u, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <span class="unit-color-dot" style="background:${u.color};"></span>
+                <code style="font-size:0.75rem;color:#64748b">${u.color}</code>
+            </td>
+            <td><strong>${u.name}</strong></td>
+            <td class="actions-cell">
+                <button class="btn btn-primary btn-xs" onclick="editUnit(${idx})">
+                    <i class="fas fa-edit"></i> 編輯
+                </button>
+                <button class="btn btn-danger btn-xs" onclick="deleteUnit(${idx})">
+                    <i class="fas fa-trash"></i> 刪除
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function openUnitModal(editIdx) {
+    const modal = document.getElementById('unitModal');
+    const title = document.getElementById('unitModalTitle');
+    const form = document.getElementById('unitForm');
+    const indexInput = document.getElementById('unitEditIndex');
+    form.reset();
+
+    if (editIdx !== undefined && editIdx !== null) {
+        const unit = ownerUnits[editIdx];
+        if (!unit) return;
+        title.innerHTML = '<i class="fas fa-building"></i> 編輯單位';
+        indexInput.value = editIdx;
+        document.getElementById('unitFormName').value = unit.name;
+        document.getElementById('unitFormColor').value = unit.color;
+        document.getElementById('unitColorHex').textContent = unit.color;
+    } else {
+        title.innerHTML = '<i class="fas fa-building"></i> 新增單位';
+        indexInput.value = '';
+        document.getElementById('unitFormColor').value = '#3b82f6';
+        document.getElementById('unitColorHex').textContent = '#3b82f6';
+    }
+
+    modal.classList.add('active');
+}
+
+function editUnit(idx) {
+    openUnitModal(idx);
+}
+
+function closeUnitModal(e) {
+    if (e.target === e.currentTarget) closeUnitModalDirect();
+}
+
+function closeUnitModalDirect() {
+    document.getElementById('unitModal').classList.remove('active');
+}
+
+async function handleUnitFormSubmit(e) {
+    e.preventDefault();
+    const indexVal = document.getElementById('unitEditIndex').value;
+    const name = document.getElementById('unitFormName').value.trim();
+    const color = document.getElementById('unitFormColor').value;
+
+    if (!name) { alert('請填寫單位名稱'); return; }
+
+    if (indexVal !== '') {
+        // 編輯模式
+        const idx = parseInt(indexVal);
+        ownerUnits[idx].name = name;
+        ownerUnits[idx].color = color;
+    } else {
+        // 新增模式：檢查重複
+        if (ownerUnits.some(u => u.name === name)) {
+            alert('此單位名稱已存在！');
+            return;
+        }
+        ownerUnits.push({ name, color });
+    }
+
+    await DB.saveOwnerUnits(ownerUnits);
+    // 同步更新執行期的 OWNER_COLORS
+    syncOwnerColors();
+    closeUnitModalDirect();
+    renderUnitTable();
+}
+
+async function deleteUnit(idx) {
+    const unit = ownerUnits[idx];
+    if (!confirm(`確定要刪除單位「${unit.name}」嗎？`)) return;
+    ownerUnits.splice(idx, 1);
+    await DB.saveOwnerUnits(ownerUnits);
+    syncOwnerColors();
+    renderUnitTable();
+}
+
+/** 將 ownerUnits 陣列同步回 OWNER_COLORS 全域物件 */
+function syncOwnerColors() {
+    // 清空現有 key
+    for (const key of Object.keys(OWNER_COLORS)) {
+        delete OWNER_COLORS[key];
+    }
+    ownerUnits.forEach(u => {
+        OWNER_COLORS[u.name] = u.color;
+    });
+}

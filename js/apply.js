@@ -5,6 +5,7 @@
 let applications = [];
 
 document.addEventListener('DOMContentLoaded', async () => {
+    await populateUnitDropdown();
     await loadApplications();
     renderMyApplications();
     // 設定預設日期為今天
@@ -21,6 +22,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('applyUSize').addEventListener('change', updateFeeEstimate);
     updateFeeEstimate();
 });
+
+// ===== 動態載入所屬單位下拉選單 =====
+async function populateUnitDropdown() {
+    const select = document.getElementById('applicantUnit');
+    if (!select) return;
+
+    // 填入選項的輔助函式（保留第一個預設選項）
+    function fillOptions(names) {
+        while (select.options.length > 1) select.remove(1);
+        names.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            select.appendChild(opt);
+        });
+    }
+
+    // 先用 OWNER_COLORS 立即填入，確保下拉選單一定有內容
+    fillOptions(Object.keys(OWNER_COLORS));
+
+    // 再嘗試從 Firestore 載入自訂單位列表（覆蓋預設）
+    try {
+        if (typeof DB !== 'undefined') {
+            const units = await DB.getOwnerUnits();
+            if (units && units.length > 0) {
+                fillOptions(units.map(u => u.name));
+            }
+        }
+    } catch (e) {
+        console.warn('載入 Firestore 單位列表失敗，使用預設值', e);
+    }
+}
 
 // ===== 自動帶入使用者資料 =====
 function prefillUserInfo() {
