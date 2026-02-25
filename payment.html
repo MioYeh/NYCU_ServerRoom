@@ -53,6 +53,7 @@
             <div class="admin-stats">
                 <span class="badge badge-warning" id="unpaidCount">0 待繳費</span>
                 <span class="badge badge-success" id="paidCount">0 已繳費</span>
+                <span class="badge badge-purple" id="confirmedCount">0 已入帳</span>
                 <span class="badge badge-info" id="totalRevenue">總金額 $0</span>
             </div>
         </div>
@@ -74,6 +75,9 @@
                     </button>
                     <button class="tab-btn" onclick="setPaymentFilter('overdue', this)">
                         <i class="fas fa-exclamation-triangle"></i> 逾期 <span class="tab-count" id="payTabOverdue">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="setPaymentFilter('confirmed', this)">
+                        <i class="fas fa-clipboard-check"></i> 已入帳 <span class="tab-count" id="payTabConfirmed">0</span>
                     </button>
                 </div>
             </div>
@@ -198,6 +202,7 @@
                         <th>費用 (NTD)</th>
                         <th>繳費狀態</th>
                         <th>繳費日期</th>
+                        <th>入帳確認</th>
                         <th>操作</th>
                     </tr>
                 </thead>

@@ -198,6 +198,20 @@
     background: #15803d;
 }
 
+.btn-confirm {
+    background: #7c3aed;
+    color: white;
+    border: none;
+}
+
+.btn-confirm:hover {
+    background: #6d28d9;
+}
+
+.confirmed-info {
+    text-align: center;
+}
+
 /* ===== Search Input ===== */
 .search-input {
     padding: 6px 12px;
@@ -339,6 +353,18 @@
     border: 1px solid #fecaca;
 }
 
+.status-confirmed {
+    background: #f3e8ff;
+    color: #6b21a8;
+    border: 1px solid #e9d5ff;
+}
+
+.status-partial {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+}
+
 /* ===== Header Badges ===== */
 .admin-stats {
     display: flex;
@@ -370,6 +396,11 @@
 .badge-info {
     background: #dbeafe;
     color: #1e40af;
+}
+
+.badge-purple {
+    background: #f3e8ff;
+    color: #6b21a8;
 }
 
 /* ===== Admin Toolbar ===== */

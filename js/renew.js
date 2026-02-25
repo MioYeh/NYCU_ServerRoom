@@ -119,6 +119,22 @@ function onDeviceSelected() {
     updateRenewFeeEstimate();
 }
 
+// ===== 繳費方式切換 =====
+function onPayMethodChanged() {
+    const method = document.getElementById('renewPayMethod').value;
+    const projectGroup = document.getElementById('budgetProjectGroup');
+    const projectInput = document.getElementById('renewBudgetProject');
+
+    if (method === 'budget') {
+        projectGroup.style.display = '';
+        projectInput.required = true;
+    } else {
+        projectGroup.style.display = 'none';
+        projectInput.required = false;
+        projectInput.value = '';
+    }
+}
+
 // ===== 快速延長按鈕 =====
 function quickExtend(months) {
     const appId = parseInt(document.getElementById('renewDevice').value);
@@ -180,9 +196,21 @@ async function handleRenewSubmit(e) {
     const appId = parseInt(document.getElementById('renewDevice').value);
     const newEndDate = document.getElementById('renewNewEndDate').value;
     const notes = document.getElementById('renewNotes').value.trim();
+    const payMethod = document.getElementById('renewPayMethod').value;
+    const budgetProject = document.getElementById('renewBudgetProject').value.trim();
 
     if (!appId || !newEndDate) {
         alert('請選擇設備並填寫新的到期日');
+        return;
+    }
+
+    if (!payMethod) {
+        alert('請選擇繳費方式');
+        return;
+    }
+
+    if (payMethod === 'budget' && !budgetProject) {
+        alert('選擇校內經費核銷時，請填寫計畫編號');
         return;
     }
 
@@ -234,8 +262,9 @@ async function handleRenewSubmit(e) {
         fee: feeResult.fee,
         paymentStatus: 'unpaid',
         paymentDate: null,
-        paymentMethod: '',
-        paymentRef: '',
+        paymentMethod: payMethod,
+        paymentRef: payMethod === 'budget' ? `計畫編號: ${budgetProject}` : '',
+        budgetProject: payMethod === 'budget' ? budgetProject : '',
         paidAmount: 0,
         paidUpTo: null
     };
@@ -249,6 +278,9 @@ async function handleRenewSubmit(e) {
     document.getElementById('renewDeviceInfo').style.display = 'none';
     document.getElementById('renewFeeEstimateBox').style.display = 'none';
     document.getElementById('renewSubmitBtn').disabled = true;
+    document.getElementById('renewPayMethod').value = '';
+    document.getElementById('renewBudgetProject').value = '';
+    document.getElementById('budgetProjectGroup').style.display = 'none';
 
     // 重新載入並渲染
     await loadApplications();
@@ -270,6 +302,9 @@ function resetRenewForm() {
     document.getElementById('renewDeviceInfo').style.display = 'none';
     document.getElementById('renewFeeEstimateBox').style.display = 'none';
     document.getElementById('renewSubmitBtn').disabled = true;
+    document.getElementById('renewPayMethod').value = '';
+    document.getElementById('renewBudgetProject').value = '';
+    document.getElementById('budgetProjectGroup').style.display = 'none';
 }
 
 // ===== 渲染我的繳費申請紀錄 =====
@@ -385,7 +420,10 @@ function showRenewDetail(app) {
             <div class="detail-row"><span class="detail-label">延期費用</span><span class="detail-value" style="font-weight:700;">NT$ ${(app.fee || 0).toLocaleString()}</span></div>
             <div class="detail-row"><span class="detail-label">繳費狀態</span><span class="detail-value"><span class="status-badge status-${app.paymentStatus}">${app.paymentStatus === 'paid' ? '已繳費' : app.paymentStatus === 'partial' ? '部分繳費' : '待繳費'}</span></span></div>
             ${app.paymentDate ? `<div class="detail-row"><span class="detail-label">繳費日期</span><span class="detail-value">${formatDate(app.paymentDate)}</span></div>` : ''}
-            ${app.paymentMethod ? `<div class="detail-row"><span class="detail-label">繳費方式</span><span class="detail-value">${app.paymentMethod}</span></div>` : ''}
+            ${app.paymentMethod ? `<div class="detail-row"><span class="detail-label">繳費方式</span><span class="detail-value">${{
+                transfer: '銀行轉帳', cash: '現金繳費', check: '支票', budget: '校內經費核銷'
+            }[app.paymentMethod] || app.paymentMethod}</span></div>` : ''}
+            ${app.budgetProject ? `<div class="detail-row"><span class="detail-label">計畫編號</span><span class="detail-value" style="font-weight:600;color:#7c3aed;">${app.budgetProject}</span></div>` : ''}
         </div>
         ${app.adminNotes ? `
         <div class="detail-section">

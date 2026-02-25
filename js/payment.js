@@ -416,9 +416,11 @@ async function renderPaymentList() {
     if (paymentFilter === 'unpaid') {
         payable = payable.filter(a => a.paymentStatus === 'unpaid' || a.paymentStatus === 'partial');
     } else if (paymentFilter === 'paid') {
-        payable = payable.filter(a => a.paymentStatus === 'paid');
+        payable = payable.filter(a => a.paymentStatus === 'paid' && !a.adminConfirmedDate);
     } else if (paymentFilter === 'overdue') {
         payable = payable.filter(a => a.paymentStatus === 'overdue');
+    } else if (paymentFilter === 'confirmed') {
+        payable = payable.filter(a => a.paymentStatus === 'paid' && a.adminConfirmedDate);
     }
 
     // 搜尋
@@ -431,10 +433,11 @@ async function renderPaymentList() {
         );
     }
 
-    // 排序: 未繳費在前
+    // 排序: 未繳費在前，已入帳在最後
     payable.sort((a, b) => {
-        const order = { overdue: 0, unpaid: 1, partial: 2, paid: 3 };
-        return (order[a.paymentStatus] || 0) - (order[b.paymentStatus] || 0);
+        const orderA = a.paymentStatus === 'paid' && a.adminConfirmedDate ? 4 : ({ overdue: 0, unpaid: 1, partial: 2, paid: 3 }[a.paymentStatus] || 0);
+        const orderB = b.paymentStatus === 'paid' && b.adminConfirmedDate ? 4 : ({ overdue: 0, unpaid: 1, partial: 2, paid: 3 }[b.paymentStatus] || 0);
+        return orderA - orderB;
     });
 
     updatePaymentCounts();
@@ -479,6 +482,28 @@ async function renderPaymentList() {
             `;
         }
 
+        // 入帳確認欄位
+        let confirmHTML = '-';
+        if (app.paymentStatus === 'paid') {
+            if (app.adminConfirmedDate) {
+                confirmHTML = `
+                    <div class="confirmed-info">
+                        <span class="status-badge status-confirmed"><i class="fas fa-check-double"></i> 已入帳</span>
+                        <div style="font-size:0.7rem;color:#64748b;margin-top:2px;">${formatDate(app.adminConfirmedDate)}</div>
+                        ${app.adminConfirmedBy ? `<div style="font-size:0.7rem;color:#64748b;">${app.adminConfirmedBy}</div>` : ''}
+                    </div>
+                `;
+            } else if (isAdminUser()) {
+                confirmHTML = `
+                    <button class="btn btn-confirm btn-xs" onclick="confirmPayment(${app.id})">
+                        <i class="fas fa-clipboard-check"></i> 入帳確認
+                    </button>
+                `;
+            } else {
+                confirmHTML = '<span style="color:#94a3b8;font-size:0.8rem;">待管理員確認</span>';
+            }
+        }
+
         let actionsHTML = '';
         if (app.paymentStatus === 'unpaid' || app.paymentStatus === 'overdue' || app.paymentStatus === 'partial') {
             actionsHTML = `
@@ -502,6 +527,7 @@ async function renderPaymentList() {
             <td>${feeDisplay}</td>
             <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
             <td>${app.paymentDate ? formatDate(app.paymentDate) : (app.paidUpTo ? '繳到 ' + app.paidUpTo : '-')}</td>
+            <td>${confirmHTML}</td>
             <td><div class="actions-cell">${actionsHTML}</div></td>
         `;
         tbody.appendChild(tr);
@@ -523,17 +549,22 @@ function updatePaymentCounts() {
     const unpaid = payable.filter(a => a.paymentStatus === 'unpaid').length;
     const partial = payable.filter(a => a.paymentStatus === 'partial').length;
     const paid = payable.filter(a => a.paymentStatus === 'paid').length;
+    const paidUnconfirmed = payable.filter(a => a.paymentStatus === 'paid' && !a.adminConfirmedDate).length;
+    const confirmed = payable.filter(a => a.paymentStatus === 'paid' && a.adminConfirmedDate).length;
     const overdue = payable.filter(a => a.paymentStatus === 'overdue').length;
     const totalRevenue = payable.filter(a => a.paymentStatus === 'paid').reduce((sum, a) => sum + a.fee, 0)
         + payable.filter(a => a.paymentStatus === 'partial').reduce((sum, a) => sum + (a.paidAmount || 0), 0);
 
     document.getElementById('payTabAll').textContent = payable.length;
     document.getElementById('payTabUnpaid').textContent = unpaid + partial;
-    document.getElementById('payTabPaid').textContent = paid;
+    document.getElementById('payTabPaid').textContent = paidUnconfirmed;
     document.getElementById('payTabOverdue').textContent = overdue;
+    document.getElementById('payTabConfirmed').textContent = confirmed;
 
     document.getElementById('unpaidCount').textContent = `${unpaid + overdue + partial} 待繳費`;
     document.getElementById('paidCount').textContent = `${paid} 已繳費`;
+    const confirmedCountEl = document.getElementById('confirmedCount');
+    if (confirmedCountEl) confirmedCountEl.textContent = `${confirmed} 已入帳`;
     document.getElementById('totalRevenue').textContent = `總收入 $${totalRevenue.toLocaleString()}`;
 }
 
@@ -735,6 +766,24 @@ function openPayDetail(appId) {
             <div class="detail-row"><span class="detail-label">繳費方式</span><span class="detail-value">${methodLabels[app.paymentMethod] || app.paymentMethod || '-'}</span></div>
             <div class="detail-row"><span class="detail-label">憑證/備註</span><span class="detail-value">${app.paymentRef || '-'}</span></div>
         `;
+        // 入帳確認資訊
+        if (app.adminConfirmedDate) {
+            paymentInfoHTML += `
+                <div class="detail-row" style="padding-top:10px;border-top:1px solid #e2e8f0;margin-top:10px;">
+                    <span class="detail-label">入帳確認</span>
+                    <span class="detail-value"><span class="status-badge status-confirmed"><i class="fas fa-check-double"></i> 已入帳</span></span>
+                </div>
+                <div class="detail-row"><span class="detail-label">確認時間</span><span class="detail-value">${formatDate(app.adminConfirmedDate)}</span></div>
+                <div class="detail-row"><span class="detail-label">確認人員</span><span class="detail-value">${app.adminConfirmedBy || '-'}</span></div>
+            `;
+        } else {
+            paymentInfoHTML += `
+                <div class="detail-row" style="padding-top:10px;border-top:1px solid #e2e8f0;margin-top:10px;">
+                    <span class="detail-label">入帳確認</span>
+                    <span class="detail-value" style="color:#f59e0b;"><i class="fas fa-clock"></i> 待管理員確認入帳</span>
+                </div>
+            `;
+        }
     } else {
         paymentInfoHTML += `
             <div class="detail-row"><span class="detail-label">核准日期</span><span class="detail-value">${formatDate(app.reviewDate)}</span></div>
@@ -768,6 +817,46 @@ function closePayDetailModal(e) {
 }
 function closePayDetailModalDirect() {
     document.getElementById('payDetailModal').classList.remove('active');
+}
+
+// ===== 管理員入帳確認 =====
+async function confirmPayment(appId) {
+    if (!isAdminUser()) {
+        alert('只有管理員可以進行入帳確認');
+        return;
+    }
+
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    if (app.paymentStatus !== 'paid') {
+        alert('此筆申請尚未完成繳費，無法進行入帳確認');
+        return;
+    }
+
+    if (app.adminConfirmedDate) {
+        alert('此筆款項已經確認入帳');
+        return;
+    }
+
+    const methodLabels = {
+        transfer: '銀行轉帳',
+        cash: '現金繳費',
+        check: '支票',
+        budget: '校內經費核銷'
+    };
+
+    const confirmMsg = `確認入帳？\n\n申請編號: #${app.id}\n設備: ${app.deviceName}\n申請人: ${app.applicantName}\n金額: NT$ ${app.fee.toLocaleString()}\n繳費方式: ${methodLabels[app.paymentMethod] || app.paymentMethod || '-'}\n${app.budgetProject ? '計畫編號: ' + app.budgetProject + '\n' : ''}${app.paymentRef ? '憑證: ' + app.paymentRef : ''}`;
+
+    if (!confirm(confirmMsg)) return;
+
+    const currentUser = getCurrentPaymentUser();
+    app.adminConfirmedDate = new Date().toISOString();
+    app.adminConfirmedBy = currentUser ? (currentUser.displayName || currentUser.username || currentUser.uid) : '管理員';
+
+    await saveApplications();
+    renderPaymentList();
+    alert(`✅ 已確認入帳！申請 #${appId} 的款項已完成最終確認。`);
 }
 
 // ===== 工具函式 =====

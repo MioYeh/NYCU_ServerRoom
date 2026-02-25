@@ -536,11 +536,16 @@ body {
     box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
 }
 
-.form-group .hint {
+.form-group .hint,
+.form-group .form-hint {
     display: block;
     margin-top: 4px;
     font-size: 0.75rem;
     color: var(--gray-500);
+}
+
+.form-group .form-hint i {
+    margin-right: 3px;
 }
 
 .form-actions {
