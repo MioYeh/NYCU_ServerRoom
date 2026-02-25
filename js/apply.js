@@ -103,6 +103,10 @@ function updateFeeEstimate() {
 // ===== 資料管理 (Firestore) =====
 async function loadApplications() {
     applications = await DB.getApplications();
+    // 自動修復被舊程式碼錯誤更新的資料
+    if (repairCorruptedApplications(applications)) {
+        await saveApplications();
+    }
 }
 
 async function saveApplications() {
@@ -263,6 +267,22 @@ function showApplyDetail(app) {
             </span>
             <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${app.id}</div>
         </div>
+        ${app.status === 'pending' && app.type !== 'renewal' ? `
+        <div class="detail-section">
+            <div class="detail-section-title"><i class="fas fa-user-check"></i> 審核進度</div>
+            <div class="detail-row">
+                <span class="detail-label">管理員審核</span>
+                <span class="detail-value">${app.adminApproval && app.adminApproval.approved
+                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span>'
+                    : '<span class="status-badge status-pending"><i class="fas fa-clock"></i> 待審核</span>'}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">主委審核</span>
+                <span class="detail-value">${app.committeeApproval && app.committeeApproval.approved
+                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span>'
+                    : '<span class="status-badge status-pending"><i class="fas fa-clock"></i> 待審核</span>'}</span>
+            </div>
+        </div>` : ''}
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-user"></i> 申請人資訊</div>
             <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${app.applicantName}</span></div>

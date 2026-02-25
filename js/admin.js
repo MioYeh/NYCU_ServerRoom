@@ -4,7 +4,8 @@
 
 let applications = [];
 let devices = [];
-let adminFilter = 'all';
+let equipFilter = 'all';
+let renewFilter = 'all';
 let currentReviewId = null;
 
 // ===== 展開/收合區塊 =====
@@ -25,9 +26,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ===== 頁面初始化：依角色調整 UI =====
 function initAdminPage() {
     const isAdmin = typeof Auth !== 'undefined' && Auth.isAdmin();
+    const isCommittee = typeof Auth !== 'undefined' && Auth.isCommittee();
+    const isReviewer = isAdmin || isCommittee;
     // 標題和導覽列已由 inline script + CSS 處理，不需再手動切換
-    // 非管理員隱藏統計徽章中的審核操作提示
-    if (!isAdmin) {
+    // 非審核者隱藏統計徽章中的審核操作提示
+    if (!isReviewer) {
         const statsDiv = document.querySelector('.header-right .admin-stats');
         if (statsDiv) statsDiv.style.display = 'none';
 
@@ -46,10 +49,22 @@ function isCurrentUserAdmin() {
     return typeof Auth !== 'undefined' && Auth.isAdmin();
 }
 
+function isCurrentUserCommittee() {
+    return typeof Auth !== 'undefined' && Auth.isCommittee();
+}
+
+function isCurrentUserReviewer() {
+    return typeof Auth !== 'undefined' && Auth.isReviewer();
+}
+
 // ===== 資料管理 (Firestore) =====
 async function loadData() {
     applications = await DB.getApplications();
     devices = await DB.getDevices() || [];
+    // 自動修復被舊程式碼錯誤更新的資料
+    if (repairCorruptedApplications(applications)) {
+        await saveApplications();
+    }
 }
 
 async function saveApplications() {
@@ -65,9 +80,14 @@ function getNextDeviceId() {
 }
 
 // ===== 篩選 =====
-function setAdminFilter(filter, btn) {
-    adminFilter = filter;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+function setAdminFilter(section, filter, btn) {
+    if (section === 'equip') {
+        equipFilter = filter;
+        document.querySelectorAll('.tab-btn[data-section="equip"]').forEach(b => b.classList.remove('active'));
+    } else {
+        renewFilter = filter;
+        document.querySelectorAll('.tab-btn[data-section="renew"]').forEach(b => b.classList.remove('active'));
+    }
     btn.classList.add('active');
     renderAdminList();
 }
@@ -77,14 +97,15 @@ async function renderAdminList() {
     await loadData(); // 重新載入確保最新
     const search = document.getElementById('adminSearch').value.toLowerCase();
     const userIsAdmin = isCurrentUserAdmin();
+    const userIsReviewer = isCurrentUserReviewer();
 
-    let filtered = [...applications].reverse();
+    let allApps = [...applications].reverse();
 
-    // 一般使用者只能看到自己的申請
-    if (!userIsAdmin) {
+    // 一般使用者只能看到自己的申請（管理員和機房主委可看全部）
+    if (!userIsReviewer) {
         const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
         if (currentUser) {
-            filtered = filtered.filter(a =>
+            allApps = allApps.filter(a =>
                 a.submittedBy === currentUser.uid ||
                 a.submittedBy === currentUser.username ||
                 (!a.submittedBy && a.applicantName === currentUser.displayName)
@@ -92,14 +113,9 @@ async function renderAdminList() {
         }
     }
 
-    // 狀態篩選
-    if (adminFilter !== 'all') {
-        filtered = filtered.filter(a => a.status === adminFilter);
-    }
-
     // 搜尋
     if (search) {
-        filtered = filtered.filter(a =>
+        allApps = allApps.filter(a =>
             a.applicantName.toLowerCase().includes(search) ||
             a.applicantUnit.toLowerCase().includes(search) ||
             a.deviceName.toLowerCase().includes(search) ||
@@ -107,43 +123,118 @@ async function renderAdminList() {
         );
     }
 
-    // 更新計數
-    updateCounts();
+    // 分離設備申請與繳費申請
+    const equipApps = allApps.filter(a => a.type !== 'renewal');
+    const renewApps = allApps.filter(a => a.type === 'renewal');
 
-    const list = document.getElementById('adminList');
+    // 更新計數
+    updateCounts(equipApps, renewApps);
+
+    // 渲染設備申請
+    const equipFiltered = equipFilter !== 'all' ? equipApps.filter(a => a.status === equipFilter) : equipApps;
+    renderAppListInto('equipList', equipFiltered, '設備申請', search);
+
+    // 渲染繳費申請
+    const renewFiltered = renewFilter !== 'all' ? renewApps.filter(a => a.status === renewFilter) : renewApps;
+    renderAppListInto('renewList', renewFiltered, '繳費申請', search);
+}
+
+function renderAppListInto(listId, filtered, sectionLabel, search) {
+    const list = document.getElementById(listId);
+    if (!list) return;
     list.innerHTML = '';
 
     if (filtered.length === 0) {
         list.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-inbox"></i>
-                <p>${search ? '找不到符合的紀錄' : '此分類下尚無申請紀錄'}</p>
+                <p>${search ? '找不到符合的紀錄' : '此分類下尚無' + sectionLabel + '紀錄'}</p>
             </div>`;
         return;
     }
+
+    const userIsAdmin = isCurrentUserAdmin();
+    const userIsCommittee = isCurrentUserCommittee();
+    const userIsReviewer = userIsAdmin || userIsCommittee;
 
     filtered.forEach(app => {
         const card = document.createElement('div');
         card.className = 'admin-card';
 
         const statusInfo = getStatusInfo(app.status);
+        const isRenewal = app.type === 'renewal';
         const cabinetLabel = app.assignedCabinet !== null
             ? `機櫃 ${CABINET_NAMES[app.assignedCabinet]} U${app.assignedStartU}-U${app.assignedStartU + app.uSize - 1}`
             : (app.preferCabinet !== '' ? `希望: 機櫃 ${CABINET_NAMES[app.preferCabinet]}` : '未指定');
 
-        const userIsAdmin = isCurrentUserAdmin();
+        // 雙重審核狀態（僅設備申請需要雙重審核，繳費申請僅管理員審核）
+        const needsDualApproval = !isRenewal;
+        const approvalHTML = needsDualApproval ? buildApprovalStatusHTML(app) : '';
+
         let actionsHTML = '';
-        if (userIsAdmin && app.status === 'pending') {
-            actionsHTML = `
-                <button class="btn btn-success btn-xs" onclick="openAssignModal(${app.id})">
-                    <i class="fas fa-check"></i> 核准
-                </button>
-                <button class="btn btn-danger btn-xs" onclick="rejectApplication(${app.id})">
-                    <i class="fas fa-times"></i> 拒絕
-                </button>
-            `;
-        } else if (userIsAdmin && app.status === 'approved') {
-            actionsHTML = `
+        if (app.status === 'pending') {
+            if (isRenewal) {
+                // 繳費申請：僅管理員審核
+                if (userIsAdmin) {
+                    actionsHTML += `
+                        <button class="btn btn-success btn-xs" onclick="approveRenewal(${app.id})">
+                            <i class="fas fa-check"></i> 核准
+                        </button>
+                        <button class="btn btn-danger btn-xs" onclick="rejectApplication(${app.id})">
+                            <i class="fas fa-times"></i> 拒絕
+                        </button>
+                    `;
+                }
+            } else {
+                // 設備申請：雙重審核
+                // 管理員操作
+                if (userIsAdmin && !app.adminApproval) {
+                    actionsHTML += `
+                        <button class="btn btn-success btn-xs" onclick="openAssignModal(${app.id})">
+                            <i class="fas fa-check"></i> 管理員核准
+                        </button>
+                    `;
+                } else if (userIsAdmin && app.adminApproval && app.adminApproval.approved) {
+                    actionsHTML += `
+                        <button class="btn btn-outline btn-xs" disabled>
+                            <i class="fas fa-check-double"></i> 管理員已核准
+                        </button>
+                    `;
+                }
+
+                // 機房主委操作
+                if (userIsCommittee && !app.committeeApproval) {
+                    actionsHTML += `
+                        <button class="btn btn-success btn-xs" onclick="committeeApprove(${app.id})">
+                            <i class="fas fa-check"></i> 主委核准
+                        </button>
+                    `;
+                } else if (userIsCommittee && app.committeeApproval && app.committeeApproval.approved) {
+                    actionsHTML += `
+                        <button class="btn btn-outline btn-xs" disabled>
+                            <i class="fas fa-check-double"></i> 主委已核准
+                        </button>
+                    `;
+                }
+
+                // 拒絕按鈕
+                if (userIsAdmin && (!app.adminApproval || !app.adminApproval.approved)) {
+                    actionsHTML += `
+                        <button class="btn btn-danger btn-xs" onclick="rejectApplication(${app.id})">
+                            <i class="fas fa-times"></i> 拒絕
+                        </button>
+                    `;
+                }
+                if (userIsCommittee && (!app.committeeApproval || !app.committeeApproval.approved)) {
+                    actionsHTML += `
+                        <button class="btn btn-danger btn-xs" onclick="rejectApplication(${app.id})">
+                            <i class="fas fa-times"></i> 拒絕
+                        </button>
+                    `;
+                }
+            }
+        } else if (userIsAdmin && app.status === 'approved' && !isRenewal) {
+            actionsHTML += `
                 <button class="btn btn-primary btn-xs" onclick="installDevice(${app.id})">
                     <i class="fas fa-server"></i> 確認上架
                 </button>
@@ -156,11 +247,17 @@ async function renderAdminList() {
             </button>
         `;
 
+        const typeBadge = isRenewal
+            ? `<span style="display:inline-block;background:#dbeafe;color:#2563eb;font-size:0.65rem;padding:2px 6px;border-radius:4px;margin-top:3px;"><i class="fas fa-rotate"></i> 繳費延期</span>`
+            : '';
+
         card.innerHTML = `
             <div class="admin-card-main">
                 <div class="admin-card-status">
                     <span class="status-badge status-${app.status}">${statusInfo.icon} ${statusInfo.label}</span>
                     <div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">#${app.id}</div>
+                    ${typeBadge}
+                    ${approvalHTML}
                 </div>
                 <div class="admin-card-info">
                     <div class="info-group">
@@ -180,12 +277,12 @@ async function renderAdminList() {
                         <span>${cabinetLabel}</span>
                     </div>
                     <div class="info-group">
-                        <label>申請日期</label>
-                        <span>${formatDate(app.submitDate)}</span>
+                        <label>${isRenewal ? '類型' : '申請日期'}</label>
+                        <span>${isRenewal ? '繳費延期 (原#' + app.originalAppId + ')' : formatDate(app.submitDate)}</span>
                     </div>
                     <div class="info-group">
-                        <label>上架日期</label>
-                        <span>${app.startDate}</span>
+                        <label>${isRenewal ? '延期至' : '上架日期'}</label>
+                        <span>${isRenewal ? app.endDate : app.startDate}</span>
                     </div>
                 </div>
                 <div class="admin-card-actions">
@@ -197,35 +294,60 @@ async function renderAdminList() {
     });
 }
 
-function updateCounts() {
-    // 一般使用者只統計自己的申請
-    let pool = applications;
-    if (!isCurrentUserAdmin()) {
-        const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
-        if (currentUser) {
-            pool = applications.filter(a =>
-                a.submittedBy === currentUser.uid ||
-                a.submittedBy === currentUser.username ||
-                (!a.submittedBy && a.applicantName === currentUser.displayName)
-            );
-        }
+// ===== 雙重審核狀態顯示（僅設備申請）=====
+function buildApprovalStatusHTML(app) {
+    if (app.status !== 'pending') return '';
+    // 繳費申請不需要雙重審核
+    if (app.type === 'renewal') return '';
+    let html = '<div class="dual-approval-status">';
+    // 管理員審核狀態
+    if (app.adminApproval && app.adminApproval.approved) {
+        html += `<div class="approval-item approved"><i class="fas fa-check-circle"></i> 管理員已核准</div>`;
+    } else {
+        html += `<div class="approval-item waiting"><i class="fas fa-clock"></i> 待管理員審核</div>`;
     }
+    // 主委審核狀態
+    if (app.committeeApproval && app.committeeApproval.approved) {
+        html += `<div class="approval-item approved"><i class="fas fa-check-circle"></i> 主委已核准</div>`;
+    } else {
+        html += `<div class="approval-item waiting"><i class="fas fa-clock"></i> 待主委審核</div>`;
+    }
+    html += '</div>';
+    return html;
+}
 
-    const all = pool.length;
-    const pending = pool.filter(a => a.status === 'pending').length;
-    const approved = pool.filter(a => a.status === 'approved').length;
-    const rejected = pool.filter(a => a.status === 'rejected').length;
-    const installed = pool.filter(a => a.status === 'installed').length;
+function updateCounts(equipApps, renewApps) {
+    // 設備申請計數
+    const equipAll = equipApps.length;
+    const equipPending = equipApps.filter(a => a.status === 'pending').length;
+    const equipApproved = equipApps.filter(a => a.status === 'approved').length;
+    const equipRejected = equipApps.filter(a => a.status === 'rejected').length;
+    const equipInstalled = equipApps.filter(a => a.status === 'installed').length;
 
-    document.getElementById('tabAll').textContent = all;
-    document.getElementById('tabPending').textContent = pending;
-    document.getElementById('tabApproved').textContent = approved;
-    document.getElementById('tabRejected').textContent = rejected;
-    document.getElementById('tabInstalled').textContent = installed;
+    document.getElementById('tabEquipAll').textContent = equipAll;
+    document.getElementById('tabEquipPending').textContent = equipPending;
+    document.getElementById('tabEquipApproved').textContent = equipApproved;
+    document.getElementById('tabEquipRejected').textContent = equipRejected;
+    document.getElementById('tabEquipInstalled').textContent = equipInstalled;
 
-    document.getElementById('pendingCount').textContent = `${pending} 待審核`;
-    document.getElementById('approvedCount').textContent = `${approved} 已通過`;
-    document.getElementById('rejectedCount').textContent = `${rejected} 已拒絕`;
+    // 繳費申請計數
+    const renewAll = renewApps.length;
+    const renewPending = renewApps.filter(a => a.status === 'pending').length;
+    const renewApproved = renewApps.filter(a => a.status === 'approved').length;
+    const renewRejected = renewApps.filter(a => a.status === 'rejected').length;
+
+    document.getElementById('tabRenewAll').textContent = renewAll;
+    document.getElementById('tabRenewPending').textContent = renewPending;
+    document.getElementById('tabRenewApproved').textContent = renewApproved;
+    document.getElementById('tabRenewRejected').textContent = renewRejected;
+
+    // Header 徽章總數
+    const totalPending = equipPending + renewPending;
+    const totalApproved = equipApproved + renewApproved;
+    const totalRejected = equipRejected + renewRejected;
+    document.getElementById('pendingCount').textContent = `${totalPending} 待審核`;
+    document.getElementById('approvedCount').textContent = `${totalApproved} 已通過`;
+    document.getElementById('rejectedCount').textContent = `${totalRejected} 已拒絕`;
 }
 
 // ===== 審核詳情彈窗 =====
@@ -237,13 +359,41 @@ function openReviewModal(appId) {
     const content = document.getElementById('reviewContent');
     const statusInfo = getStatusInfo(app.status);
 
+    const isRenewal = app.type === 'renewal';
+
     content.innerHTML = `
         <div style="text-align:center;margin-bottom:16px;">
             <span class="status-badge status-${app.status}" style="font-size:0.9rem;padding:6px 16px;">
                 ${statusInfo.icon} ${statusInfo.label}
             </span>
-            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${app.id}</div>
+            ${isRenewal ? '<div style="margin-top:6px;"><span style="background:#dbeafe;color:#2563eb;font-size:0.8rem;padding:3px 10px;border-radius:6px;"><i class="fas fa-rotate"></i> 繳費延期申請</span></div>' : ''}
+            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${app.id}${isRenewal ? ' (原申請 #' + app.originalAppId + ')' : ''}</div>
         </div>
+        ${app.status === 'pending' && !isRenewal ? `
+        <div class="detail-section">
+            <div class="detail-section-title"><i class="fas fa-user-check"></i> 雙重審核狀態</div>
+            <div class="detail-row">
+                <span class="detail-label">管理員審核</span>
+                <span class="detail-value">${app.adminApproval && app.adminApproval.approved
+                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span> <small>(' + (app.adminApproval.byName || '') + ' ' + formatDate(app.adminApproval.date) + ')</small>'
+                    : '<span class="status-badge status-pending"><i class="fas fa-clock"></i> 待審核</span>'}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">主委審核</span>
+                <span class="detail-value">${app.committeeApproval && app.committeeApproval.approved
+                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span> <small>(' + (app.committeeApproval.byName || '') + ' ' + formatDate(app.committeeApproval.date) + ')</small>'
+                    : '<span class="status-badge status-pending"><i class="fas fa-clock"></i> 待審核</span>'}</span>
+            </div>
+        </div>` : ''}
+        ${isRenewal ? `
+        <div class="detail-section">
+            <div class="detail-section-title"><i class="fas fa-calendar-plus"></i> 延期資訊</div>
+            <div class="detail-row"><span class="detail-label">原到期日</span><span class="detail-value">${app.originalEndDate || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">延期起始</span><span class="detail-value">${app.startDate}</span></div>
+            <div class="detail-row"><span class="detail-label">新到期日</span><span class="detail-value" style="color:#16a34a;font-weight:700;">${app.endDate}</span></div>
+            <div class="detail-row"><span class="detail-label">延期費用</span><span class="detail-value" style="font-weight:700;">NT$ ${(app.fee || 0).toLocaleString()}</span></div>
+            <div class="detail-row"><span class="detail-label">繳費狀態</span><span class="detail-value"><span class="status-badge status-${app.paymentStatus}">${app.paymentStatus === 'paid' ? '已繳費' : '待繳費'}</span></span></div>
+        </div>` : ''}
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-user"></i> 申請人資訊</div>
             <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${app.applicantName}</span></div>
@@ -276,24 +426,62 @@ function openReviewModal(appId) {
             <div class="detail-row"><span class="detail-label">費用</span><span class="detail-value">NT$ ${app.fee.toLocaleString()}</span></div>
             <div class="detail-row"><span class="detail-label">審核日期</span><span class="detail-value">${formatDate(app.reviewDate)}</span></div>
             <div class="detail-row"><span class="detail-label">管理員備註</span><span class="detail-value">${app.adminNotes || '-'}</span></div>
+            ${app.adminApproval ? `<div class="detail-row"><span class="detail-label">管理員審核</span><span class="detail-value">${app.adminApproval.approved ? '✅ 已核准' : '❌ 已拒絕'} <small>(${app.adminApproval.byName || ''} ${formatDate(app.adminApproval.date)})</small></span></div>` : ''}
+            ${app.committeeApproval ? `<div class="detail-row"><span class="detail-label">主委審核</span><span class="detail-value">${app.committeeApproval.approved ? '✅ 已核准' : '❌ 已拒絕'} <small>(${app.committeeApproval.byName || ''} ${formatDate(app.committeeApproval.date)})</small></span></div>` : ''}
         </div>` : ''}
     `;
 
-    // 底部按鈕（審核操作僅管理員可見）
+    // 底部按鈕（審核操作僅審核者可見）
     const actions = document.getElementById('reviewActions');
     let btns = '';
-    if (isCurrentUserAdmin()) {
-        if (app.status === 'pending') {
-            btns = `
-                <button class="btn btn-success" onclick="closeReviewModalDirect();openAssignModal(${app.id})">
-                    <i class="fas fa-check"></i> 核准
-                </button>
-                <button class="btn btn-danger" onclick="closeReviewModalDirect();rejectApplication(${app.id})">
-                    <i class="fas fa-times"></i> 拒絕
-                </button>
-            `;
-        } else if (app.status === 'approved') {
-            btns = `
+    const userIsAdmin = isCurrentUserAdmin();
+    const userIsCommittee = isCurrentUserCommittee();
+
+    if (app.status === 'pending') {
+        if (isRenewal) {
+            // 繳費申請：僅管理員審核
+            if (userIsAdmin && !app.adminApproval) {
+                btns += `
+                    <button class="btn btn-success" onclick="closeReviewModalDirect();approveRenewal(${app.id})">
+                        <i class="fas fa-check"></i> 核准延期
+                    </button>
+                    <button class="btn btn-danger" onclick="closeReviewModalDirect();rejectApplication(${app.id})">
+                        <i class="fas fa-times"></i> 拒絕
+                    </button>
+                `;
+            }
+        } else {
+            // 設備申請：雙重審核
+            // 管理員審核按鈕
+            if (userIsAdmin && !app.adminApproval) {
+                btns += `
+                    <button class="btn btn-success" onclick="closeReviewModalDirect();openAssignModal(${app.id})">
+                        <i class="fas fa-check"></i> 管理員核准
+                    </button>
+                    <button class="btn btn-danger" onclick="closeReviewModalDirect();rejectApplication(${app.id})">
+                        <i class="fas fa-times"></i> 拒絕
+                    </button>
+                `;
+            } else if (userIsAdmin && app.adminApproval && app.adminApproval.approved) {
+                btns += `<button class="btn btn-outline" disabled><i class="fas fa-check-double"></i> 管理員已核准</button>`;
+            }
+            // 機房主委審核按鈕
+            if (userIsCommittee && !app.committeeApproval) {
+                btns += `
+                    <button class="btn btn-success" onclick="closeReviewModalDirect();committeeApprove(${app.id})">
+                        <i class="fas fa-check"></i> 主委核准
+                    </button>
+                    <button class="btn btn-danger" onclick="closeReviewModalDirect();rejectApplication(${app.id})">
+                        <i class="fas fa-times"></i> 拒絕
+                    </button>
+                `;
+            } else if (userIsCommittee && app.committeeApproval && app.committeeApproval.approved) {
+                btns += `<button class="btn btn-outline" disabled><i class="fas fa-check-double"></i> 主委已核准</button>`;
+            }
+        }
+    } else if (app.status === 'approved' && !isRenewal) {
+        if (userIsAdmin) {
+            btns += `
                 <button class="btn btn-primary" onclick="closeReviewModalDirect();installDevice(${app.id})">
                     <i class="fas fa-server"></i> 確認上架
                 </button>
@@ -311,6 +499,54 @@ function closeReviewModal(e) {
 }
 function closeReviewModalDirect() {
     document.getElementById('reviewModal').classList.remove('active');
+}
+
+// ===== 核准繳費申請（續約延期）=====
+async function approveRenewal(appId) {
+    if (!isCurrentUserAdmin()) { alert('僅管理員可執行此操作'); return; }
+    await loadData();
+    const app = applications.find(a => a.id === appId);
+    if (!app || app.type !== 'renewal') return;
+
+    const originalApp = applications.find(a => a.id === app.originalAppId);
+    const originalEndDate = app.originalEndDate || (originalApp ? originalApp.endDate : '-');
+    const currentUser = Auth.getCurrentUser();
+
+    const notes = prompt(
+        `管理員核准繳費申請 #${appId}\n` +
+        `設備: ${app.deviceName} (${app.uSize}U)\n` +
+        `原到期日: ${originalEndDate}\n` +
+        `新到期日: ${app.endDate}\n` +
+        `延期費用: NT$ ${(app.fee || 0).toLocaleString()}\n\n` +
+        `請輸入管理員備註（可留空）:`
+    );
+    if (notes === null) return; // 取消
+
+    // 記錄管理員審核
+    app.adminApproval = {
+        approved: true,
+        by: currentUser ? currentUser.uid : '',
+        byName: currentUser ? currentUser.displayName : '管理員',
+        date: new Date().toISOString(),
+        notes: notes || ''
+    };
+    app.reviewDate = new Date().toISOString();
+    app.adminNotes = notes || '';
+
+    // 繳費申請僅需管理員核准，直接通過
+    app.status = 'approved';
+    if (app.fee > 0) {
+        app.paymentStatus = 'unpaid';
+    }
+
+    // 不再直接修改原始申請的 endDate 和 fee
+    if (originalApp) {
+        repairCorruptedApplications(applications);
+    }
+
+    await saveApplications();
+    renderAdminList();
+    alert(`✅ 繳費申請 #${appId} 已核准！\n設備「${app.deviceName}」到期日已延長至 ${app.endDate}\n延期費用: NT$ ${(app.fee || 0).toLocaleString()}`);
 }
 
 // ===== 核准：開啟指派位置彈窗 =====
@@ -422,37 +658,117 @@ async function handleAssignSubmit(e) {
         return;
     }
 
-    // 更新申請
-    app.status = 'approved';
+    // 更新申請（管理員審核）
+    const currentUser = Auth.getCurrentUser();
+    app.adminApproval = {
+        approved: true,
+        by: currentUser ? currentUser.uid : '',
+        byName: currentUser ? currentUser.displayName : '管理員',
+        date: new Date().toISOString(),
+        notes: notes
+    };
     app.reviewDate = new Date().toISOString();
     app.assignedCabinet = cabinet;
     app.assignedStartU = startU;
     app.assignedIP = ip;
     app.fee = fee;
     app.adminNotes = notes;
-    if (fee > 0) {
-        app.paymentStatus = 'unpaid';
+
+    // 檢查是否雙方都已核准
+    if (app.committeeApproval && app.committeeApproval.approved) {
+        app.status = 'approved';
+        if (fee > 0) {
+            app.paymentStatus = 'unpaid';
+        }
     }
 
     await saveApplications();
     closeAssignModalDirect();
     renderAdminList();
-    alert(`✅ 申請 #${appId} 已核准！\n位置：機櫃 ${CABINET_NAMES[cabinet]} U${startU}-U${startU + app.uSize - 1}`);
+
+    if (app.status === 'approved') {
+        alert(`✅ 申請 #${appId} 已核准（雙方審核完成）！\n位置：機櫃 ${CABINET_NAMES[cabinet]} U${startU}-U${startU + app.uSize - 1}`);
+    } else {
+        alert(`✅ 管理員已核准申請 #${appId}！\n位置：機櫃 ${CABINET_NAMES[cabinet]} U${startU}-U${startU + app.uSize - 1}\n等待機房主委審核。`);
+    }
+}
+
+// ===== 機房主委核准 =====
+async function committeeApprove(appId) {
+    if (!isCurrentUserCommittee()) { alert('僅機房主委可執行此操作'); return; }
+    await loadData();
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    const currentUser = Auth.getCurrentUser();
+    const isRenewal = app.type === 'renewal';
+
+    const notes = prompt(
+        `機房主委核准申請 #${appId}\n` +
+        `設備: ${app.deviceName} (${app.uSize}U)\n` +
+        `申請人: ${app.applicantName} (${app.applicantUnit})\n` +
+        (isRenewal ? `類型: 繳費延期\n新到期日: ${app.endDate}\n` : `上架日期: ${app.startDate}\n`) +
+        `\n請輸入主委備註（可留空）:`
+    );
+    if (notes === null) return; // 取消
+
+    app.committeeApproval = {
+        approved: true,
+        by: currentUser ? currentUser.uid : '',
+        byName: currentUser ? currentUser.displayName : '機房主委',
+        date: new Date().toISOString(),
+        notes: notes || ''
+    };
+
+    // 檢查是否雙方都已核准
+    if (app.adminApproval && app.adminApproval.approved) {
+        app.status = 'approved';
+        app.reviewDate = app.reviewDate || new Date().toISOString();
+        if (app.fee > 0) {
+            app.paymentStatus = 'unpaid';
+        }
+    }
+
+    await saveApplications();
+    renderAdminList();
+
+    if (app.status === 'approved') {
+        alert(`✅ 申請 #${appId} 已核准（雙方審核完成）！`);
+    } else {
+        alert(`✅ 主委已核准申請 #${appId}！\n等待管理員審核。`);
+    }
 }
 
 // ===== 拒絕 =====
 async function rejectApplication(appId) {
-    if (!isCurrentUserAdmin()) { alert('僅管理員可執行此操作'); return; }
+    if (!isCurrentUserReviewer()) { alert('僅審核者可執行此操作'); return; }
     await loadData(); // 確保最新資料
     const app = applications.find(a => a.id === appId);
     if (!app) return;
 
-    const reason = prompt(`拒絕申請 #${appId}「${app.deviceName}」\n請輸入拒絕原因：`);
+    const currentUser = Auth.getCurrentUser();
+    const roleName = isCurrentUserAdmin() ? '管理員' : '機房主委';
+
+    const reason = prompt(`${roleName}拒絕申請 #${appId}「${app.deviceName}」\n請輸入拒絕原因：`);
     if (reason === null) return; // 取消
 
     app.status = 'rejected';
     app.reviewDate = new Date().toISOString();
-    app.adminNotes = reason || '未說明原因';
+    app.adminNotes = (app.adminNotes ? app.adminNotes + '\n' : '') + `[${roleName}拒絕] ${reason || '未說明原因'}`;
+
+    // 記錄誰拒絕的
+    const rejectionRecord = {
+        approved: false,
+        by: currentUser ? currentUser.uid : '',
+        byName: currentUser ? currentUser.displayName : roleName,
+        date: new Date().toISOString(),
+        notes: reason || '未說明原因'
+    };
+    if (isCurrentUserAdmin()) {
+        app.adminApproval = rejectionRecord;
+    } else {
+        app.committeeApproval = rejectionRecord;
+    }
 
     await saveApplications();
     renderAdminList();
@@ -541,7 +857,7 @@ function formatDate(dateStr) {
 // ===== 使用者管理 =====
 function initUserManagement() {
     if (typeof Auth !== 'undefined' && Auth.isAdmin()) {
-        const section = document.getElementById('userMgmtSection');
+        const section = document.getElementById('systemMgmtSection');
         if (section) {
             section.style.display = 'block';
             renderUserTable();
@@ -556,8 +872,8 @@ async function renderUserTable() {
     tbody.innerHTML = '';
 
     users.forEach(u => {
-        const roleClass = u.role === 'admin' ? 'role-admin' : 'role-user';
-        const roleLabel = u.role === 'admin' ? '管理員' : '使用者';
+        const roleClass = u.role === 'admin' ? 'role-admin' : u.role === 'committee' ? 'role-committee' : 'role-user';
+        const roleLabel = u.role === 'admin' ? '管理員' : u.role === 'committee' ? '機房主委' : '使用者';
         const currentUser = Auth.getCurrentUser();
         const isSelf = currentUser && currentUser.uid === u.uid;
         const tr = document.createElement('tr');
@@ -690,11 +1006,8 @@ let ownerUnits = []; // { name, color }
 
 function initUnitManagement() {
     if (typeof Auth !== 'undefined' && Auth.isAdmin()) {
-        const section = document.getElementById('unitMgmtSection');
-        if (section) {
-            section.style.display = 'block';
-            loadAndRenderUnits();
-        }
+        // systemMgmtSection 已由 initUserManagement 顯示
+        loadAndRenderUnits();
     }
     // 色碼即時顯示
     const colorInput = document.getElementById('unitFormColor');

@@ -128,6 +128,17 @@ const Auth = {
         return user && user.role === 'admin';
     },
 
+    // 是否為機房主委
+    isCommittee() {
+        const user = this.getCurrentUser();
+        return user && user.role === 'committee';
+    },
+
+    // 是否為審核者（管理員或機房主委）
+    isReviewer() {
+        return this.isAdmin() || this.isCommittee();
+    },
+
     // 認證守衛：未登入則導向登入頁
     requireAuth() {
         if (!this.isLoggedIn()) {
@@ -159,6 +170,17 @@ const Auth = {
         if (!this.requireAuth()) return false;
         if (!this.isAdmin()) {
             alert('此頁面需要管理員權限');
+            window.location.href = 'dashboard.html';
+            return false;
+        }
+        return true;
+    },
+
+    // 認證守衛：需要審核者身份（管理員或機房主委）
+    requireReviewer() {
+        if (!this.requireAuth()) return false;
+        if (!this.isReviewer()) {
+            alert('此頁面需要審核權限');
             window.location.href = 'dashboard.html';
             return false;
         }
@@ -348,11 +370,15 @@ function initAuthNav() {
 // ===== 依角色動態調整導覽列連結 =====
 function updateNavByRole() {
     const isAdmin = Auth.isAdmin();
+    const isCommittee = Auth.isCommittee();
+    const isReviewer = isAdmin || isCommittee;
     // 將「管理審核」連結文字依角色調整
     const navLinks = document.querySelectorAll('.nav-links .nav-link');
     navLinks.forEach(link => {
         if (link.getAttribute('href') === 'admin.html') {
-            if (!isAdmin) {
+            if (isCommittee && !isAdmin) {
+                link.innerHTML = '<i class="fas fa-clipboard-check"></i> 主委審核';
+            } else if (!isReviewer) {
                 link.innerHTML = '<i class="fas fa-list-check"></i> 申請進度';
             }
         }

@@ -1100,10 +1100,58 @@
     border: 1px solid #fecaca;
 }
 
+.role-committee {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
 .role-user {
     background: #dbeafe;
     color: #1e40af;
     border: 1px solid #bfdbfe;
+}
+
+/* ===== Dual Approval Status ===== */
+.dual-approval-status {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 6px;
+}
+
+.approval-item {
+    font-size: 0.65rem;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.approval-item.approved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.approval-item.waiting {
+    background: #fef9c3;
+    color: #854d0e;
+}
+
+/* ===== Outline Button ===== */
+.btn-outline {
+    background: transparent;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    cursor: default;
+    opacity: 0.7;
+}
+
+.btn-outline:hover {
+    background: transparent;
+    color: #64748b;
 }
 
 /* ===== User Form Modal ===== */
@@ -1595,3 +1643,97 @@
     font-size: 0.9rem;
     color: #475569;
 }
+
+/* ===== 繳費申請頁面 (renew.html) ===== */
+.quick-select-btns {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-outline {
+    background: white;
+    border: 1.5px solid #3b82f6;
+    color: #3b82f6;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-outline:hover {
+    background: #3b82f6;
+    color: white;
+}
+
+.renew-device-info {
+    margin-top: 12px;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Admin Section Blocks (split equip / renew) ===== */
+.admin-section-block {
+    margin-bottom: 28px;
+}
+
+.admin-section-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-section-title i {
+    color: #3b82f6;
+}
+
+.admin-toolbar.sub-toolbar {
+    margin-bottom: 10px;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+}
+
+/* ===== Sub management blocks inside system management ===== */
+.sub-mgmt-block {
+    margin-bottom: 20px;
+}
+
+.sub-mgmt-block:last-child {
+    margin-bottom: 0;
+}
+
+.sub-mgmt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.sub-mgmt-header h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #334155;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+}
+
+.sub-mgmt-header h3 i {
+    color: #3b82f6;
+    font-size: 0.9rem;
+}
+

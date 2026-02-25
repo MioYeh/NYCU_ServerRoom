@@ -48,6 +48,10 @@ function initPaymentPage() {
 // ===== 資料管理 (Firestore) =====
 async function loadApplications() {
     applications = await DB.getApplications();
+    // 自動修復被舊程式碼錯誤更新的資料
+    if (repairCorruptedApplications(applications)) {
+        await saveApplications();
+    }
 }
 
 async function saveApplications() {

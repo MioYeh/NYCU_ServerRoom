@@ -15,6 +15,16 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isCommittee() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'committee';
+    }
+
+    // 審核者（管理員或機房主委）
+    function isReviewer() {
+      return isAdmin() || isCommittee();
+    }
+
     // 使用者 profile：本人可讀；本人可更新 displayName；僅 admin 可改 role 或管理他人
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();

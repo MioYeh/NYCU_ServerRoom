@@ -13,15 +13,23 @@
             if (_u && _u.role === 'admin') {
                 document.documentElement.classList.add('is-admin');
                 document.title = '管理審核 - NYCU BMI 機房管理';
+            } else if (_u && _u.role === 'committee') {
+                document.documentElement.classList.add('is-committee');
+                document.title = '主委審核 - NYCU BMI 機房管理';
             }
         } catch(e) {}
     </script>
     <style>
         /* 依角色即時切換文字，避免閃爍 */
         .role-admin-text { display: none; }
+        .role-committee-text { display: none; }
         .role-user-text  { display: inline; }
         .is-admin .role-admin-text { display: inline; }
         .is-admin .role-user-text  { display: none; }
+        .is-admin .role-committee-text { display: none; }
+        .is-committee .role-committee-text { display: inline; }
+        .is-committee .role-user-text  { display: none; }
+        .is-committee .role-admin-text { display: none; }
     </style>
 </head>
 <body>
@@ -34,8 +42,10 @@
         <div class="nav-links">
             <a href="dashboard.html" class="nav-link"><i class="fas fa-th-large"></i> 機櫃總覽</a>
             <a href="apply.html" class="nav-link"><i class="fas fa-file-alt"></i> 設備申請</a>
+            <a href="renew.html" class="nav-link"><i class="fas fa-rotate"></i> 繳費申請</a>
             <a href="admin.html" class="nav-link active">
                 <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理審核</span>
+                <span class="role-committee-text"><i class="fas fa-clipboard-check"></i> 主委審核</span>
                 <span class="role-user-text"><i class="fas fa-list-check"></i> 申請進度</span>
             </a>
             <a href="payment.html" class="nav-link"><i class="fas fa-credit-card"></i> 繳費紀錄</a>
@@ -46,6 +56,7 @@
         <div class="header-left">
             <h1>
                 <span class="role-admin-text"><i class="fas fa-user-shield"></i> 管理員審核</span>
+                <span class="role-committee-text"><i class="fas fa-clipboard-check"></i> 機房主委審核</span>
                 <span class="role-user-text"><i class="fas fa-list-check"></i> 我的申請進度</span>
             </h1>
         </div>
@@ -59,90 +70,129 @@
     </header>
 
     <main class="page-content">
-        <!-- 篩選工具列 -->
+        <!-- 搜尋列 -->
         <div class="admin-toolbar">
-            <div class="toolbar-left">
-                <div class="tab-group">
-                    <button class="tab-btn active" data-filter="all" onclick="setAdminFilter('all', this)">
-                        全部 <span class="tab-count" id="tabAll">0</span>
-                    </button>
-                    <button class="tab-btn" data-filter="pending" onclick="setAdminFilter('pending', this)">
-                        <i class="fas fa-clock"></i> 待審核 <span class="tab-count" id="tabPending">0</span>
-                    </button>
-                    <button class="tab-btn" data-filter="approved" onclick="setAdminFilter('approved', this)">
-                        <i class="fas fa-check"></i> 已通過 <span class="tab-count" id="tabApproved">0</span>
-                    </button>
-                    <button class="tab-btn" data-filter="rejected" onclick="setAdminFilter('rejected', this)">
-                        <i class="fas fa-times"></i> 已拒絕 <span class="tab-count" id="tabRejected">0</span>
-                    </button>
-                    <button class="tab-btn" data-filter="installed" onclick="setAdminFilter('installed', this)">
-                        <i class="fas fa-server"></i> 已上架 <span class="tab-count" id="tabInstalled">0</span>
-                    </button>
-                </div>
-            </div>
+            <div class="toolbar-left"></div>
             <div class="toolbar-right">
                 <input type="text" id="adminSearch" placeholder="搜尋申請人/設備名..." class="search-input" oninput="renderAdminList()">
             </div>
         </div>
 
-        <!-- 申請列表 -->
-        <div class="admin-list" id="adminList">
-            <div class="empty-state">
-                <i class="fas fa-inbox"></i>
-                <p>尚無申請紀錄</p>
+        <!-- 設備申請區塊 -->
+        <div class="admin-section-block">
+            <div class="admin-section-title">
+                <i class="fas fa-file-alt"></i> 設備申請
             </div>
-        </div>
-
-        <!-- 使用者管理區域（僅管理員可見）-->
-        <div class="user-mgmt-section" id="userMgmtSection" style="display:none">
-            <div class="user-mgmt-header" onclick="toggleSection('userMgmtBody')">
-                <h2>
-                    <i class="fas fa-users-cog"></i> 使用者管理
-                    <i class="fas fa-chevron-down section-toggle-icon" id="userMgmtBodyIcon"></i>
-                </h2>
-                <button class="btn btn-primary" onclick="event.stopPropagation();openUserModal()">
-                    <i class="fas fa-user-plus"></i> 新增使用者
-                </button>
+            <div class="admin-toolbar sub-toolbar">
+                <div class="toolbar-left">
+                    <div class="tab-group">
+                        <button class="tab-btn active" data-section="equip" data-filter="all" onclick="setAdminFilter('equip','all', this)">
+                            全部 <span class="tab-count" id="tabEquipAll">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="equip" data-filter="pending" onclick="setAdminFilter('equip','pending', this)">
+                            <i class="fas fa-clock"></i> 待審核 <span class="tab-count" id="tabEquipPending">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="equip" data-filter="approved" onclick="setAdminFilter('equip','approved', this)">
+                            <i class="fas fa-check"></i> 已通過 <span class="tab-count" id="tabEquipApproved">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="equip" data-filter="rejected" onclick="setAdminFilter('equip','rejected', this)">
+                            <i class="fas fa-times"></i> 已拒絕 <span class="tab-count" id="tabEquipRejected">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="equip" data-filter="installed" onclick="setAdminFilter('equip','installed', this)">
+                            <i class="fas fa-server"></i> 已上架 <span class="tab-count" id="tabEquipInstalled">0</span>
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="section-collapsible" id="userMgmtBody">
-                <div class="user-table-wrap">
-                    <table class="data-table" id="userTable">
-                        <thead>
-                            <tr>
-                                <th>使用者</th>
-                                <th>角色</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="userTableBody"></tbody>
-                    </table>
+            <div class="admin-list" id="equipList">
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <p>尚無設備申請紀錄</p>
                 </div>
             </div>
         </div>
 
-        <!-- 所屬單位管理區域（僅管理員可見）-->
-        <div class="user-mgmt-section" id="unitMgmtSection" style="display:none">
-            <div class="user-mgmt-header" onclick="toggleSection('unitMgmtBody')">
-                <h2>
-                    <i class="fas fa-building"></i> 所屬單位管理
-                    <i class="fas fa-chevron-down section-toggle-icon" id="unitMgmtBodyIcon"></i>
-                </h2>
-                <button class="btn btn-primary" onclick="event.stopPropagation();openUnitModal()">
-                    <i class="fas fa-plus"></i> 新增單位
-                </button>
+        <!-- 繳費申請區塊 -->
+        <div class="admin-section-block">
+            <div class="admin-section-title">
+                <i class="fas fa-rotate"></i> 繳費申請
             </div>
-            <div class="section-collapsible" id="unitMgmtBody">
-                <div class="user-table-wrap">
-                    <table class="data-table" id="unitTable">
-                        <thead>
-                            <tr>
-                                <th>顏色</th>
-                                <th>單位名稱</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="unitTableBody"></tbody>
-                    </table>
+            <div class="admin-toolbar sub-toolbar">
+                <div class="toolbar-left">
+                    <div class="tab-group">
+                        <button class="tab-btn active" data-section="renew" data-filter="all" onclick="setAdminFilter('renew','all', this)">
+                            全部 <span class="tab-count" id="tabRenewAll">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="renew" data-filter="pending" onclick="setAdminFilter('renew','pending', this)">
+                            <i class="fas fa-clock"></i> 待審核 <span class="tab-count" id="tabRenewPending">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="renew" data-filter="approved" onclick="setAdminFilter('renew','approved', this)">
+                            <i class="fas fa-check"></i> 已通過 <span class="tab-count" id="tabRenewApproved">0</span>
+                        </button>
+                        <button class="tab-btn" data-section="renew" data-filter="rejected" onclick="setAdminFilter('renew','rejected', this)">
+                            <i class="fas fa-times"></i> 已拒絕 <span class="tab-count" id="tabRenewRejected">0</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="admin-list" id="renewList">
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <p>尚無繳費申請紀錄</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系統管理區域（僅管理員可見）-->
+        <div class="user-mgmt-section" id="systemMgmtSection" style="display:none">
+            <div class="user-mgmt-header" onclick="toggleSection('systemMgmtBody')">
+                <h2>
+                    <i class="fas fa-cogs"></i> 系統管理
+                    <i class="fas fa-chevron-down section-toggle-icon collapsed" id="systemMgmtBodyIcon"></i>
+                </h2>
+            </div>
+            <div class="section-collapsible collapsed" id="systemMgmtBody">
+                <!-- 使用者管理 -->
+                <div class="sub-mgmt-block">
+                    <div class="sub-mgmt-header">
+                        <h3><i class="fas fa-users-cog"></i> 使用者管理</h3>
+                        <button class="btn btn-primary btn-sm" onclick="openUserModal()">
+                            <i class="fas fa-user-plus"></i> 新增使用者
+                        </button>
+                    </div>
+                    <div class="user-table-wrap">
+                        <table class="data-table" id="userTable">
+                            <thead>
+                                <tr>
+                                    <th>使用者</th>
+                                    <th>角色</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="userTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- 所屬單位管理 -->
+                <div class="sub-mgmt-block">
+                    <div class="sub-mgmt-header">
+                        <h3><i class="fas fa-building"></i> 所屬單位管理</h3>
+                        <button class="btn btn-primary btn-sm" onclick="openUnitModal()">
+                            <i class="fas fa-plus"></i> 新增單位
+                        </button>
+                    </div>
+                    <div class="user-table-wrap">
+                        <table class="data-table" id="unitTable">
+                            <thead>
+                                <tr>
+                                    <th>顏色</th>
+                                    <th>單位名稱</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="unitTableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -174,6 +224,7 @@
                         <label for="userFormRole">角色 *</label>
                         <select id="userFormRole" required>
                             <option value="user">一般使用者</option>
+                            <option value="committee">機房主委</option>
                             <option value="admin">管理員</option>
                         </select>
                     </div>

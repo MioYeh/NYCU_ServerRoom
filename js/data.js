@@ -92,6 +92,83 @@ function calculateProRatedFee(startDateStr, endDateStr, uSize) {
     return { fee, months: totalMonths, breakdown };
 }
 
+/**
+ * 取得設備的有效到期日（考慮所有已核准的延期申請）
+ * 原始申請的 endDate 只記錄「原始計費期間」的到期日，
+ * 實際有效到期日需從已核准的延期申請中推算。
+ * @param {number} appId - 原始設備申請 ID
+ * @param {Array} apps - 所有申請陣列
+ * @returns {string|null} 有效到期日 (YYYY-MM-DD)
+ */
+function getEffectiveEndDate(appId, apps) {
+    const original = apps.find(a => a.id === appId);
+    if (!original) return null;
+
+    const approvedRenewals = apps.filter(a =>
+        a.type === 'renewal' &&
+        a.originalAppId === appId &&
+        (a.status === 'approved' || a.status === 'installed')
+    );
+
+    if (approvedRenewals.length === 0) return original.endDate;
+
+    // 取所有已核准延期中最遠的到期日
+    return approvedRenewals.reduce((latest, r) =>
+        r.endDate > latest ? r.endDate : latest,
+        original.endDate
+    );
+}
+
+/**
+ * 修復被舊程式碼錯誤更新的申請資料
+ * 舊版 approveRenewal 會把原始申請的 endDate 和 fee 更新成涵蓋整個延期期間，
+ * 此函式偵測並修正這些錯誤。
+ * @param {Array} apps - 所有申請陣列
+ * @returns {boolean} 是否有資料被修復
+ */
+function repairCorruptedApplications(apps) {
+    let repaired = false;
+
+    // 依原始申請 ID 分組所有已核准的延期申請
+    const renewalsByOriginal = {};
+    apps.filter(a => a.type === 'renewal' && (a.status === 'approved' || a.status === 'installed'))
+        .forEach(r => {
+            if (!renewalsByOriginal[r.originalAppId]) renewalsByOriginal[r.originalAppId] = [];
+            renewalsByOriginal[r.originalAppId].push(r);
+        });
+
+    for (const [origId, renewals] of Object.entries(renewalsByOriginal)) {
+        const originalApp = apps.find(a => a.id === parseInt(origId) && a.type !== 'renewal');
+        if (!originalApp) continue;
+
+        // 以最早的延期申請中記錄的 originalEndDate 作為正確的原始到期日
+        renewals.sort((a, b) => new Date(a.submitDate) - new Date(b.submitDate));
+        const correctEndDate = renewals[0].originalEndDate;
+        if (!correctEndDate) continue;
+
+        // 檢查原始申請的 endDate 是否被錯誤更新（比正確值晚）
+        if (originalApp.endDate > correctEndDate) {
+            console.log(`修復申請 #${originalApp.id}: endDate ${originalApp.endDate} → ${correctEndDate}`);
+            originalApp.endDate = correctEndDate;
+            // 重新計算正確的費用（僅涵蓋原始計費期間）
+            const correctFee = calculateProRatedFee(originalApp.startDate, correctEndDate, originalApp.uSize).fee;
+            originalApp.fee = correctFee;
+            // 更新繳費狀態
+            if ((originalApp.paidAmount || 0) >= correctFee) {
+                originalApp.paymentStatus = 'paid';
+            } else if ((originalApp.paidAmount || 0) > 0) {
+                originalApp.paymentStatus = 'partial';
+            }
+            repaired = true;
+        }
+    }
+
+    if (repaired) {
+        console.log('已自動修復被舊程式碼錯誤更新的申請資料');
+    }
+    return repaired;
+}
+
 // 備用顏色 (當擁有者超過預設顏色時自動分配)
 const EXTRA_COLORS = [
     '#a855f7', '#e11d48', '#0d9488', '#ca8a04', '#7c3aed',
