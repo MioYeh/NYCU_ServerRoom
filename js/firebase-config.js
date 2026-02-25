@@ -16,3 +16,6 @@ const auth = firebase.auth();
 
 // Firestore 資料庫實例
 const db = firebase.firestore();
+
+const secondaryApp = firebase.apps.find(app => app.name === 'secondary') || firebase.initializeApp(firebaseConfig, 'secondary');
+const secondaryAuth = secondaryApp.auth();
