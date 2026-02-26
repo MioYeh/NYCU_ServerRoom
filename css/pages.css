@@ -198,6 +198,15 @@
     background: #15803d;
 }
 
+.btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #d97706;
+}
+
 .btn-confirm {
     background: #7c3aed;
     color: white;
@@ -729,6 +738,54 @@
     .chart-stats-row {
         grid-template-columns: 1fr;
     }
+}
+
+/* ===== Admin Export Toolbar ===== */
+.admin-export-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding: 14px 18px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid #e2e8f0;
+}
+.admin-export-toolbar .export-toolbar-left {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* ===== Annual Stats Section ===== */
+.annual-stats-section {
+    margin-bottom: 24px;
+}
+.annual-stats-section .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.annual-year-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.annual-year-label {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1e293b;
+    min-width: 100px;
+    text-align: center;
+}
+.annual-detail-table-wrap {
+    margin-top: 20px;
+}
+.annual-detail-table-wrap .chart-card-title {
+    margin-bottom: 12px;
 }
 
 /* ===== Payment Table ===== */
@@ -1766,5 +1823,262 @@
 .sub-mgmt-header h3 i {
     color: #3b82f6;
     font-size: 0.9rem;
+}
+
+/* ===== 繳費單 Receipt ===== */
+.receipt-actions {
+    display: flex;
+    gap: 10px;
+    padding: 16px 24px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.receipt-wrap {
+    padding: 40px;
+    background: white;
+    font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+    color: #1e293b;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.receipt-header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 3px double #1e293b;
+}
+
+.receipt-logo {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 4px;
+    letter-spacing: 2px;
+}
+
+.receipt-logo i {
+    color: #2563eb;
+    margin-right: 8px;
+}
+
+.receipt-subtitle {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 8px;
+}
+
+.receipt-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+
+.receipt-section {
+    margin-bottom: 24px;
+}
+
+.receipt-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e293b;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #2563eb;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.receipt-section-title i {
+    color: #2563eb;
+    font-size: 0.85rem;
+}
+
+.receipt-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+}
+
+.receipt-info-row {
+    display: flex;
+    gap: 8px;
+    font-size: 0.9rem;
+    padding: 4px 0;
+}
+
+.receipt-info-label {
+    color: #64748b;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+.receipt-info-value {
+    color: #1e293b;
+    font-weight: 500;
+}
+
+.receipt-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 0.875rem;
+}
+
+.receipt-table th {
+    background: #f1f5f9;
+    color: #334155;
+    font-weight: 600;
+    padding: 10px 12px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+}
+
+.receipt-table td {
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    color: #1e293b;
+}
+
+.receipt-table .text-right {
+    text-align: right;
+}
+
+.receipt-table tfoot td {
+    font-weight: 700;
+    font-size: 1rem;
+    background: #f8fafc;
+    border-top: 2px solid #1e293b;
+}
+
+.receipt-payment-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+    margin-top: 8px;
+}
+
+.receipt-footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.receipt-stamp-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 40px;
+}
+
+.receipt-stamp-box {
+    width: 180px;
+    text-align: center;
+}
+
+.receipt-stamp-line {
+    border-top: 1px solid #1e293b;
+    margin-bottom: 6px;
+}
+
+.receipt-stamp-label {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.receipt-notice {
+    margin-top: 24px;
+    padding: 12px 16px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: #92400e;
+    line-height: 1.6;
+}
+
+.receipt-notice-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.modal-xl {
+    max-width: 860px;
+    width: 95%;
+}
+
+/* ===== 繳費單列印樣式 ===== */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #receiptModal,
+    #receiptModal * {
+        visibility: visible;
+    }
+
+    #receiptModal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: white;
+        z-index: 99999;
+        overflow: auto;
+        display: flex;
+        justify-content: center;
+    }
+
+    #receiptModal .modal-content {
+        box-shadow: none;
+        border: none;
+        max-width: 100%;
+        width: 100%;
+        margin: 0;
+        border-radius: 0;
+    }
+
+    #receiptModal .modal-header {
+        display: none;
+    }
+
+    .no-print,
+    .receipt-actions {
+        display: none !important;
+    }
+
+    .receipt-wrap {
+        padding: 20px 30px;
+        max-width: 100%;
+    }
+
+    .receipt-table th {
+        background: #f1f5f9 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .receipt-table tfoot td {
+        background: #f8fafc !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .receipt-notice {
+        background: #fffbeb !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    @page {
+        margin: 10mm;
+        size: A4;
+    }
 }
 

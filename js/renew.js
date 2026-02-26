@@ -379,8 +379,64 @@ function renderMyRenewals() {
                 </span>
             </div>
         `;
+        // 如果是 pending 狀態，顯示刪除按鈕
+        if (app.status === 'pending') {
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'app-card-delete';
+            deleteBtn.innerHTML = `
+                <button class="btn btn-danger btn-xs" onclick="deleteRenewalApplication(${app.id}, event)" title="刪除申請">
+                    <i class="fas fa-trash"></i> 刪除
+                </button>
+            `;
+            card.querySelector('.app-card-footer').appendChild(deleteBtn);
+        }
+
         list.appendChild(card);
     });
+}
+
+// ===== 刪除繳費申請（使用者：僅限 pending 狀態）=====
+async function deleteRenewalApplication(appId, evt) {
+    if (evt) evt.stopPropagation(); // 阻止事件冒泡到卡片
+
+    const app = applications.find(a => a.id === appId);
+    if (!app) { alert('找不到此申請'); return; }
+
+    const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
+    const isAdmin = typeof Auth !== 'undefined' && Auth.isAdmin();
+
+    // 檢查權限
+    if (app.status === 'pending') {
+        // pending 狀態：擁有者或管理員可刪除
+        const isOwner = currentUser && (
+            app.submittedBy === currentUser.uid ||
+            app.submittedBy === currentUser.username ||
+            (!app.submittedBy && app.applicantName === currentUser.displayName)
+        );
+        if (!isOwner && !isAdmin) {
+            alert('只有申請人本人或管理員可以刪除此申請');
+            return;
+        }
+    } else {
+        // 非 pending 狀態：僅管理員可刪除
+        if (!isAdmin) {
+            alert('此申請已經審核，只有管理員可以刪除');
+            return;
+        }
+    }
+
+    if (!confirm(`確定要刪除繳費申請 #${appId}（${app.deviceName}）嗎？\n此操作無法復原。`)) return;
+
+    const idx = applications.findIndex(a => a.id === appId);
+    if (idx !== -1) {
+        applications.splice(idx, 1);
+        await saveApplications();
+        // 關閉詳情彈窗（如果開著的話）
+        closeRenewDetailDirect();
+        renderMyRenewals();
+        populateDeviceDropdown();
+        alert(`✅ 繳費申請 #${appId} 已刪除`);
+    }
 }
 
 // ===== 繳費申請詳情彈窗 =====
@@ -436,6 +492,35 @@ function showRenewDetail(app) {
             <p style="color:#475569;font-size:0.9rem;">${app.notes}</p>
         </div>` : ''}
     `;
+
+    // 更新詳情彈窗底部按鈕
+    const footer = document.getElementById('renewDetailFooter');
+    if (footer) {
+        let footerHTML = '';
+        const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
+        const isAdmin = typeof Auth !== 'undefined' && Auth.isAdmin();
+
+        if (app.status === 'pending') {
+            // pending：擁有者或管理員可刪除
+            const isOwner = currentUser && (
+                app.submittedBy === currentUser.uid ||
+                app.submittedBy === currentUser.username ||
+                (!app.submittedBy && app.applicantName === currentUser.displayName)
+            );
+            if (isOwner || isAdmin) {
+                footerHTML += `<button class="btn btn-danger" onclick="deleteRenewalApplication(${app.id})">
+                    <i class="fas fa-trash"></i> 刪除申請
+                </button>`;
+            }
+        } else if (isAdmin) {
+            // 非 pending：僅管理員可刪除
+            footerHTML += `<button class="btn btn-danger" onclick="deleteRenewalApplication(${app.id})">
+                <i class="fas fa-trash"></i> 刪除申請
+            </button>`;
+        }
+        footerHTML += `<button class="btn btn-secondary" onclick="closeRenewDetailDirect()">關閉</button>`;
+        footer.innerHTML = footerHTML;
+    }
 
     document.getElementById('renewDetailModal').classList.add('active');
 }

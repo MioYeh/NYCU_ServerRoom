@@ -86,6 +86,18 @@
             </div>
         </div>
 
+        <!-- 管理員工具列: 匯出報表 -->
+        <div class="admin-export-toolbar" id="adminExportToolbar" style="display:none">
+            <div class="export-toolbar-left">
+                <button class="btn btn-primary" onclick="exportPaymentCSV()">
+                    <i class="fas fa-file-csv"></i> 匯出繳費紀錄 (CSV)
+                </button>
+                <button class="btn btn-success" onclick="exportAnnualReportCSV()">
+                    <i class="fas fa-file-excel"></i> 匯出年度統計報表 (CSV)
+                </button>
+            </div>
+        </div>
+
         <!-- 費用圖表儀表板 -->
         <div class="chart-dashboard" id="chartDashboard">
             <div class="chart-header">
@@ -133,6 +145,88 @@
                     <div class="chart-canvas-wrap">
                         <canvas id="unitFeeChart"></canvas>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 年度繳費統計 (管理員) -->
+        <div class="annual-stats-section" id="annualStatsSection" style="display:none">
+            <div class="chart-header">
+                <h2><i class="fas fa-calendar-alt"></i> 年度繳費統計</h2>
+                <div class="annual-year-selector">
+                    <button class="btn btn-secondary btn-sm" onclick="changeAnnualYear(-1)">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <span class="annual-year-label" id="annualYearLabel">2025 年度</span>
+                    <button class="btn btn-secondary btn-sm" onclick="changeAnnualYear(1)">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="chart-stats-row">
+                <div class="chart-stat-card stat-total">
+                    <div class="stat-icon"><i class="fas fa-calendar"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="annualTotalFee">$0</div>
+                        <div class="stat-label">年度應收總額</div>
+                    </div>
+                </div>
+                <div class="chart-stat-card stat-collected">
+                    <div class="stat-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="annualCollected">$0</div>
+                        <div class="stat-label">年度已收金額</div>
+                    </div>
+                </div>
+                <div class="chart-stat-card stat-outstanding">
+                    <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="annualOutstanding">$0</div>
+                        <div class="stat-label">年度未收金額</div>
+                    </div>
+                </div>
+                <div class="chart-stat-card stat-rate">
+                    <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+                    <div class="stat-info">
+                        <div class="stat-value" id="annualRate">0%</div>
+                        <div class="stat-label">年度收繳率</div>
+                    </div>
+                </div>
+            </div>
+            <div class="chart-row">
+                <div class="chart-card">
+                    <div class="chart-card-title"><i class="fas fa-chart-bar"></i> 月度費用趨勢</div>
+                    <div class="chart-canvas-wrap">
+                        <canvas id="annualMonthlyChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-title"><i class="fas fa-chart-pie"></i> 各單位年度費用</div>
+                    <div class="chart-canvas-wrap">
+                        <canvas id="annualUnitChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="annual-detail-table-wrap">
+                <div class="chart-card-title"><i class="fas fa-table"></i> 年度繳費明細</div>
+                <div class="payment-table-wrap">
+                    <table class="data-table" id="annualDetailTable">
+                        <thead>
+                            <tr>
+                                <th>申請編號</th>
+                                <th>申請人</th>
+                                <th>所屬單位</th>
+                                <th>設備名稱</th>
+                                <th>機櫃位置</th>
+                                <th>使用期間</th>
+                                <th>年度應繳</th>
+                                <th>已繳金額</th>
+                                <th>繳費狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody id="annualDetailBody"></tbody>
+                        <tfoot id="annualDetailFoot"></tfoot>
+                    </table>
                 </div>
             </div>
         </div>
@@ -262,8 +356,30 @@
                 <button class="btn-close" onclick="closePayDetailModalDirect()">&times;</button>
             </div>
             <div class="modal-body" id="payDetailContent"></div>
-            <div class="modal-footer">
+            <div class="modal-footer" id="payDetailFooter">
                 <button class="btn btn-secondary" onclick="closePayDetailModalDirect()">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 繳費單彈窗 -->
+    <div class="modal-overlay" id="receiptModal" onclick="closeReceiptModal(event)">
+        <div class="modal-content modal-xl">
+            <div class="modal-header bg-success">
+                <h3><i class="fas fa-file-invoice-dollar"></i> 繳費單</h3>
+                <button class="btn-close" onclick="closeReceiptModalDirect()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:0;">
+                <div class="receipt-actions no-print">
+                    <button class="btn btn-primary" onclick="printReceipt()">
+                        <i class="fas fa-print"></i> 列印繳費單
+                    </button>
+                    <button class="btn btn-success" onclick="downloadReceiptPDF()">
+                        <i class="fas fa-download"></i> 下載 PDF
+                    </button>
+                    <button class="btn btn-secondary" onclick="closeReceiptModalDirect()">關閉</button>
+                </div>
+                <div id="receiptContent"></div>
             </div>
         </div>
     </div>

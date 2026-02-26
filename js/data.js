@@ -1,8 +1,8 @@
 /**
  * 機房機櫃管理系統 - 預設資料
  * 
- * 機櫃名稱: A ~ H (共 8 個)
- * 每個機櫃有 42U
+ * 機櫃名稱: B ~ I (共 8 個)
+ * BCDE 每櫃 41U, FGHI 每櫃 42U
  * 
  * 設備資料結構:
  * {
@@ -19,8 +19,18 @@
  * }
  */
 
-const CABINET_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-const TOTAL_U = 42;
+const CABINET_NAMES = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+const CABINET_U = [41, 41, 41, 41, 42, 42, 42, 42]; // BCDE=41U, FGHI=42U
+
+/** 取得指定機櫃的 U 數 */
+function getCabinetU(cabinetIdx) {
+    return CABINET_U[cabinetIdx] || 42;
+}
+
+/** 取得所有機櫃的總 U 數 */
+function getTotalU() {
+    return CABINET_U.reduce((sum, u) => sum + u, 0);
+}
 
 // 擁有者對應顏色
 const OWNER_COLORS = {

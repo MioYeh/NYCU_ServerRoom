@@ -79,7 +79,8 @@ function renderCabinets() {
     CABINET_NAMES.forEach((name, cabinetIdx) => {
         const cabinetDevices = devices.filter(d => d.cabinet === cabinetIdx);
         const usedU = cabinetDevices.reduce((sum, d) => sum + d.uSize, 0);
-        const usagePercent = Math.round((usedU / TOTAL_U) * 100);
+        const cabinetMaxU = getCabinetU(cabinetIdx);
+        const usagePercent = Math.round((usedU / cabinetMaxU) * 100);
 
         // 顏色
         let barColor = '#10b981';
@@ -91,7 +92,7 @@ function renderCabinets() {
         cabinet.innerHTML = `
             <div class="cabinet-header">
                 機櫃 ${name}
-                <div class="cabinet-usage">${usedU} / ${TOTAL_U} U (${usagePercent}%)</div>
+                <div class="cabinet-usage">${usedU} / ${cabinetMaxU} U (${usagePercent}%)</div>
                 <div class="usage-bar-bg"><div class="usage-bar-fill" style="width:${usagePercent}%;background:${barColor}"></div></div>
             </div>
             <div class="cabinet-body" id="cabinet-body-${cabinetIdx}"></div>
@@ -106,8 +107,9 @@ function renderCabinets() {
 function renderCabinetBody(body, cabinetIdx, cabinetDevices) {
     body.style.position = 'relative';
 
-    // 建立 42U 的空格 (由上到下: U42 → U1)
-    for (let u = TOTAL_U; u >= 1; u--) {
+    // 建立U空格 (由上到下)
+    const maxU = getCabinetU(cabinetIdx);
+    for (let u = maxU; u >= 1; u--) {
         const slot = document.createElement('div');
         slot.className = 'u-slot empty';
         slot.dataset.cabinet = cabinetIdx;
@@ -224,7 +226,7 @@ function renderOwnerFilter() {
 function renderStats() {
     const total = devices.length;
     const usedU = devices.reduce((sum, d) => sum + d.uSize, 0);
-    const totalU = TOTAL_U * CABINET_NAMES.length;
+    const totalU = getTotalU();
     const rate = totalU > 0 ? Math.round((usedU / totalU) * 100) : 0;
 
     document.getElementById('statTotal').textContent = total;
@@ -462,7 +464,8 @@ function updateAvailableSlots() {
     });
 
     const free = [];
-    for (let u = 1; u <= TOTAL_U; u++) {
+    const cabinetMaxU = getCabinetU(cabinetIdx);
+    for (let u = 1; u <= cabinetMaxU; u++) {
         if (!occupied.has(u)) free.push(u);
     }
 
@@ -503,12 +506,13 @@ async function handleFormSubmit(e) {
     const description = document.getElementById('description').value.trim();
 
     // 驗證 U 位置範圍
-    if (startU < 1 || startU > TOTAL_U) {
-        alert(`起始 U 位置必須在 1 ~ ${TOTAL_U} 之間`);
+    const cabinetMaxU = getCabinetU(cabinet);
+    if (startU < 1 || startU > cabinetMaxU) {
+        alert(`起始 U 位置必須在 1 ~ ${cabinetMaxU} 之間`);
         return;
     }
-    if (startU + uSize - 1 > TOTAL_U) {
-        alert(`設備超出機櫃範圍 (U${startU} + ${uSize}U = U${startU + uSize - 1}，超過 ${TOTAL_U}U)`);
+    if (startU + uSize - 1 > cabinetMaxU) {
+        alert(`設備超出機櫃範圍 (U${startU} + ${uSize}U = U${startU + uSize - 1}，超過 ${cabinetMaxU}U)`);
         return;
     }
 

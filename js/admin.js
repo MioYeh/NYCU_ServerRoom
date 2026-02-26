@@ -241,6 +241,29 @@ function renderAppListInto(listId, filtered, sectionLabel, search) {
             `;
         }
 
+        // 刪除按鈕：pending 狀態 → 擁有者或管理員可刪；非 pending → 僅管理員可刪
+        if (app.status === 'pending') {
+            const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
+            const isOwner = currentUser && (
+                app.submittedBy === currentUser.uid ||
+                app.submittedBy === currentUser.username ||
+                (!app.submittedBy && app.applicantName === currentUser.displayName)
+            );
+            if (isOwner || userIsAdmin) {
+                actionsHTML += `
+                    <button class="btn btn-danger btn-xs" onclick="deleteApplication(${app.id})" title="刪除申請">
+                        <i class="fas fa-trash"></i> 刪除
+                    </button>
+                `;
+            }
+        } else if (userIsAdmin) {
+            actionsHTML += `
+                <button class="btn btn-danger btn-xs" onclick="deleteApplication(${app.id})" title="刪除申請">
+                    <i class="fas fa-trash"></i> 刪除
+                </button>
+            `;
+        }
+
         actionsHTML += `
             <button class="btn btn-secondary btn-xs" onclick="openReviewModal(${app.id})">
                 <i class="fas fa-eye"></i> 詳情
@@ -488,6 +511,25 @@ function openReviewModal(appId) {
             `;
         }
     }
+    // 刪除按鈕（審核詳情彈窗）
+    if (app.status === 'pending') {
+        const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
+        const isOwner = currentUser && (
+            app.submittedBy === currentUser.uid ||
+            app.submittedBy === currentUser.username ||
+            (!app.submittedBy && app.applicantName === currentUser.displayName)
+        );
+        if (isOwner || userIsAdmin) {
+            btns += `<button class="btn btn-danger" onclick="closeReviewModalDirect();deleteApplication(${app.id})">
+                <i class="fas fa-trash"></i> 刪除申請
+            </button>`;
+        }
+    } else if (userIsAdmin) {
+        btns += `<button class="btn btn-danger" onclick="closeReviewModalDirect();deleteApplication(${app.id})">
+            <i class="fas fa-trash"></i> 刪除申請
+        </button>`;
+    }
+
     btns += `<button class="btn btn-secondary" onclick="closeReviewModalDirect()">關閉</button>`;
     actions.innerHTML = btns;
 
@@ -499,6 +541,60 @@ function closeReviewModal(e) {
 }
 function closeReviewModalDirect() {
     document.getElementById('reviewModal').classList.remove('active');
+}
+
+// ===== 刪除申請 =====
+async function deleteApplication(appId) {
+    await loadData();
+    const app = applications.find(a => a.id === appId);
+    if (!app) { alert('找不到此申請'); return; }
+
+    const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
+    const isAdmin = isCurrentUserAdmin();
+
+    // 權限檢查
+    if (app.status === 'pending') {
+        // pending 狀態：擁有者或管理員可刪除
+        const isOwner = currentUser && (
+            app.submittedBy === currentUser.uid ||
+            app.submittedBy === currentUser.username ||
+            (!app.submittedBy && app.applicantName === currentUser.displayName)
+        );
+        if (!isOwner && !isAdmin) {
+            alert('只有申請人本人或管理員可以刪除此申請');
+            return;
+        }
+    } else {
+        // 非 pending 狀態：僅管理員可刪除
+        if (!isAdmin) {
+            alert('此申請已經審核，只有管理員可以刪除');
+            return;
+        }
+    }
+
+    const typeLabel = app.type === 'renewal' ? '繳費申請' : '設備申請';
+    if (!confirm(`確定要刪除${typeLabel} #${appId}（${app.deviceName}）嗎？\n此操作無法復原。`)) return;
+
+    // 如果是已上架的設備申請，同時從 devices 中移除
+    if (app.status === 'installed' && app.assignedCabinet !== null) {
+        const deviceIdx = devices.findIndex(d =>
+            d.cabinet === app.assignedCabinet &&
+            d.startU === app.assignedStartU &&
+            d.size === app.uSize
+        );
+        if (deviceIdx !== -1) {
+            devices.splice(deviceIdx, 1);
+            await saveDevices();
+        }
+    }
+
+    const idx = applications.findIndex(a => a.id === appId);
+    if (idx !== -1) {
+        applications.splice(idx, 1);
+        await saveApplications();
+        renderAdminList();
+        alert(`✅ ${typeLabel} #${appId} 已刪除`);
+    }
 }
 
 // ===== 核准繳費申請（續約延期）=====
@@ -602,7 +698,8 @@ function updateAssignHint() {
     });
 
     const free = [];
-    for (let u = 1; u <= TOTAL_U; u++) {
+    const cabinetMaxU = getCabinetU(cabinetIdx);
+    for (let u = 1; u <= cabinetMaxU; u++) {
         if (!occupied.has(u)) free.push(u);
     }
 
@@ -636,11 +733,12 @@ async function handleAssignSubmit(e) {
     const notes = document.getElementById('assignAdminNotes').value.trim();
 
     // 驗證
-    if (startU < 1 || startU > TOTAL_U) {
-        alert(`起始 U 位置必須在 1 ~ ${TOTAL_U} 之間`);
+    const cabinetMaxU = getCabinetU(cabinet);
+    if (startU < 1 || startU > cabinetMaxU) {
+        alert(`起始 U 位置必須在 1 ~ ${cabinetMaxU} 之間`);
         return;
     }
-    if (startU + app.uSize - 1 > TOTAL_U) {
+    if (startU + app.uSize - 1 > cabinetMaxU) {
         alert(`設備超出機櫃範圍`);
         return;
     }

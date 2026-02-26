@@ -29,15 +29,22 @@ function initPaymentPage() {
     const admin = isAdminUser();
     const panel = document.getElementById('userPaymentPanel');
     const chartDash = document.getElementById('chartDashboard');
+    const exportToolbar = document.getElementById('adminExportToolbar');
+    const annualSection = document.getElementById('annualStatsSection');
 
     if (admin) {
-        // 管理員：顯示圖表，隱藏使用者面板
+        // 管理員：顯示圖表、匯出工具列、年度統計，隱藏使用者面板
         if (panel) panel.style.display = 'none';
         if (chartDash) chartDash.style.display = '';
+        if (exportToolbar) exportToolbar.style.display = '';
+        if (annualSection) annualSection.style.display = '';
+        renderAnnualStats();
     } else {
         // 一般使用者：顯示個人繳費面板，隱藏圖表
         if (panel) panel.style.display = '';
         if (chartDash) chartDash.style.display = 'none';
+        if (exportToolbar) exportToolbar.style.display = 'none';
+        if (annualSection) annualSection.style.display = 'none';
         // 隱藏總收入 badge（僅管理員需要）
         const revenueEl = document.getElementById('totalRevenue');
         if (revenueEl) revenueEl.style.display = 'none';
@@ -512,11 +519,35 @@ async function renderPaymentList() {
                 </button>
             `;
         }
+        // 已繳費或部分繳費（有 paidAmount）→ 顯示繳費單按鈕
+        if (app.paymentStatus === 'paid' || (app.paymentStatus === 'partial' && app.paidAmount > 0)) {
+            actionsHTML += `
+                <button class="btn btn-primary btn-xs" onclick="openReceiptForApp(${app.id})" title="繳費單">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                </button>
+            `;
+        }
+        // 待繳費也可以產生繳費通知單
+        if (app.paymentStatus === 'unpaid' || app.paymentStatus === 'overdue') {
+            actionsHTML += `
+                <button class="btn btn-warning btn-xs" onclick="openPaymentNotice(${app.id})" title="繳費通知單">
+                    <i class="fas fa-file-invoice"></i>
+                </button>
+            `;
+        }
         actionsHTML += `
             <button class="btn btn-secondary btn-xs" onclick="openPayDetail(${app.id})">
                 <i class="fas fa-eye"></i>
             </button>
         `;
+        // 管理員可刪除繳費紀錄（已審核過的申請）
+        if (isAdminUser()) {
+            actionsHTML += `
+                <button class="btn btn-danger btn-xs" onclick="deletePaymentRecord(${app.id})" title="刪除此筆紀錄">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+        }
 
         tr.innerHTML = `
             <td><strong>#${app.id}</strong></td>
@@ -536,6 +567,7 @@ async function renderPaymentList() {
     // 更新圖表 (僅管理員)
     if (isAdminUser()) {
         renderPaymentCharts();
+        renderAnnualStats();
     }
 
     // 更新使用者面板
@@ -665,7 +697,13 @@ async function handleSinglePaySubmit(method, ref, methodLabels) {
     await saveApplications();
     closePayModalDirect();
     renderPaymentList();
-    alert(`✅ 繳費完成！申請 #${appId} 已標記為已繳費。`);
+
+    // 產生繳費單
+    showReceipt([{
+        app,
+        fee: remaining,
+        payUpToMonth: null
+    }], method, ref);
 }
 
 // ===== 批次繳費處理 =====
@@ -724,7 +762,13 @@ async function handleBatchPaySubmit(method, ref, methodLabels) {
     await saveApplications();
     closePayModalDirect();
     renderPaymentList();
-    alert(`✅ 批次繳費完成！共 ${items.length} 筆，合計 NT$ ${totalFee.toLocaleString()}`);
+
+    // 產生繳費單
+    const receiptItems = items.map(item => {
+        const app = applications.find(a => a.id === item.appId);
+        return { app, fee: item.fee, payUpToMonth: item.payUpToMonth };
+    }).filter(i => i.app);
+    showReceipt(receiptItems, method, ref);
 }
 
 // ===== 繳費詳情 =====
@@ -809,6 +853,30 @@ function openPayDetail(appId) {
         </div>
     `;
 
+    // 更新 footer 按鈕
+    const footer = document.getElementById('payDetailFooter');
+    if (footer) {
+        let footerHTML = '';
+        if (app.paymentStatus === 'paid' || (app.paymentStatus === 'partial' && app.paidAmount > 0)) {
+            footerHTML += `<button class="btn btn-primary" onclick="closePayDetailModalDirect(); openReceiptForApp(${app.id})">
+                <i class="fas fa-file-invoice-dollar"></i> 列印繳費單
+            </button>`;
+        }
+        if (app.paymentStatus === 'unpaid' || app.paymentStatus === 'overdue') {
+            footerHTML += `<button class="btn btn-warning" onclick="closePayDetailModalDirect(); openPaymentNotice(${app.id})">
+                <i class="fas fa-file-invoice"></i> 繳費通知單
+            </button>`;
+        }
+        // 管理員可刪除
+        if (isAdminUser()) {
+            footerHTML += `<button class="btn btn-danger" onclick="closePayDetailModalDirect(); deletePaymentRecord(${app.id})">
+                <i class="fas fa-trash"></i> 刪除紀錄
+            </button>`;
+        }
+        footerHTML += `<button class="btn btn-secondary" onclick="closePayDetailModalDirect()">關閉</button>`;
+        footer.innerHTML = footerHTML;
+    }
+
     document.getElementById('payDetailModal').classList.add('active');
 }
 
@@ -817,6 +885,40 @@ function closePayDetailModal(e) {
 }
 function closePayDetailModalDirect() {
     document.getElementById('payDetailModal').classList.remove('active');
+}
+
+// ===== 管理員刪除繳費紀錄 =====
+async function deletePaymentRecord(appId) {
+    if (!isAdminUser()) {
+        alert('只有管理員可以刪除繳費紀錄');
+        return;
+    }
+
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    const typeLabel = app.type === 'renewal' ? '繳費申請' : '設備申請';
+    const statusLabel = app.paymentStatus === 'paid' ? '已繳費'
+        : app.paymentStatus === 'partial' ? '部分繳費'
+        : app.paymentStatus === 'overdue' ? '逾期' : '待繳費';
+
+    if (!confirm(
+        `確定要刪除此筆繳費紀錄嗎？\n\n` +
+        `${typeLabel} #${appId}\n` +
+        `設備：${app.deviceName}\n` +
+        `申請人：${app.applicantName}\n` +
+        `費用：NT$ ${app.fee.toLocaleString()}\n` +
+        `狀態：${statusLabel}\n\n` +
+        `此操作會刪除整筆申請資料，無法復原。`
+    )) return;
+
+    const idx = applications.findIndex(a => a.id === appId);
+    if (idx !== -1) {
+        applications.splice(idx, 1);
+        await saveApplications();
+        renderPaymentList();
+        alert(`✅ ${typeLabel} #${appId} 的繳費紀錄已刪除`);
+    }
 }
 
 // ===== 管理員入帳確認 =====
@@ -1054,3 +1156,864 @@ async function renderPaymentCharts() {
         });
     }
 }
+
+// ===== 繳費單 Receipt =====
+
+// ===== 年度繳費統計 =====
+let currentAnnualYear = new Date().getFullYear();
+let annualMonthlyChartInstance = null;
+let annualUnitChartInstance = null;
+
+function changeAnnualYear(delta) {
+    currentAnnualYear += delta;
+    renderAnnualStats();
+}
+
+/**
+ * 計算某筆申請在指定年度內的應繳費用
+ * 學校用「曆年」來計算經費，即 1/1 ~ 12/31
+ */
+function calculateAnnualFeeForApp(app, year) {
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+
+    // 申請的計費期間
+    const appStart = app.startDate;
+    const appEnd = app.endDate;
+    if (!appStart || !appEnd) return 0;
+
+    // 計費期間與年度的交集
+    const effectiveStart = appStart > yearStart ? appStart : yearStart;
+    const effectiveEnd = appEnd < yearEnd ? appEnd : yearEnd;
+
+    if (effectiveStart > effectiveEnd) return 0;
+
+    const result = calculateProRatedFee(effectiveStart, effectiveEnd, app.uSize);
+    return result.fee;
+}
+
+/**
+ * 計算某筆申請在指定年度內已繳的金額
+ */
+function calculateAnnualPaidForApp(app, year) {
+    const annualFee = calculateAnnualFeeForApp(app, year);
+    if (annualFee <= 0) return 0;
+
+    if (app.paymentStatus === 'paid') {
+        // 全額繳清 → 該年度內的費用都算已繳
+        return annualFee;
+    }
+
+    if (app.paymentStatus === 'partial' && app.paidUpTo) {
+        // 部分繳費：計算已繳到日期在該年度內涵蓋多少
+        const yearStart = `${year}-01-01`;
+        const yearEnd = `${year}-12-31`;
+        const appStart = app.startDate;
+        const paidUpTo = app.paidUpTo;
+
+        const effectiveStart = appStart > yearStart ? appStart : yearStart;
+        const effectivePaidEnd = paidUpTo < yearEnd ? paidUpTo : yearEnd;
+
+        if (effectiveStart > effectivePaidEnd) return 0;
+
+        const result = calculateProRatedFee(effectiveStart, effectivePaidEnd, app.uSize);
+        return Math.min(result.fee, annualFee);
+    }
+
+    return 0;
+}
+
+/**
+ * 渲染年度統計
+ */
+async function renderAnnualStats() {
+    if (!isAdminUser()) return;
+
+    const year = currentAnnualYear;
+    const yearLabel = document.getElementById('annualYearLabel');
+    if (yearLabel) yearLabel.textContent = `${year} 年度`;
+
+    // 取得所有有費用的申請
+    const allApps = applications.filter(a =>
+        (a.status === 'approved' || a.status === 'installed') && a.fee > 0
+    );
+
+    // 年度內有費用的申請
+    const yearApps = allApps.filter(a => calculateAnnualFeeForApp(a, year) > 0);
+
+    // 總統計
+    let annualTotal = 0;
+    let annualPaid = 0;
+    yearApps.forEach(a => {
+        annualTotal += calculateAnnualFeeForApp(a, year);
+        annualPaid += calculateAnnualPaidForApp(a, year);
+    });
+    const annualOutstanding = annualTotal - annualPaid;
+    const annualRateVal = annualTotal > 0 ? Math.round((annualPaid / annualTotal) * 100) : 0;
+
+    const el = (id) => document.getElementById(id);
+    if (el('annualTotalFee')) el('annualTotalFee').textContent = `NT$ ${annualTotal.toLocaleString()}`;
+    if (el('annualCollected')) el('annualCollected').textContent = `NT$ ${annualPaid.toLocaleString()}`;
+    if (el('annualOutstanding')) el('annualOutstanding').textContent = `NT$ ${annualOutstanding.toLocaleString()}`;
+    if (el('annualRate')) el('annualRate').textContent = `${annualRateVal}%`;
+
+    // ===== 月度趨勢圖 =====
+    const monthLabels = [];
+    const monthFeeData = [];
+    const monthPaidData = [];
+
+    for (let m = 1; m <= 12; m++) {
+        monthLabels.push(`${m}月`);
+        const mStart = `${year}-${String(m).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, m, 0).getDate();
+        const mEnd = `${year}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+        let mFee = 0;
+        let mPaid = 0;
+        yearApps.forEach(a => {
+            const appStart = a.startDate;
+            const appEnd = a.endDate;
+            if (!appStart || !appEnd) return;
+
+            const effStart = appStart > mStart ? appStart : mStart;
+            const effEnd = appEnd < mEnd ? appEnd : mEnd;
+            if (effStart > effEnd) return;
+
+            const fee = calculateProRatedFee(effStart, effEnd, a.uSize).fee;
+            mFee += fee;
+
+            // 已繳金額
+            if (a.paymentStatus === 'paid') {
+                mPaid += fee;
+            } else if (a.paymentStatus === 'partial' && a.paidUpTo) {
+                const effPaidEnd = a.paidUpTo < mEnd ? a.paidUpTo : mEnd;
+                if (effStart <= effPaidEnd) {
+                    mPaid += calculateProRatedFee(effStart, effPaidEnd, a.uSize).fee;
+                }
+            }
+        });
+
+        monthFeeData.push(mFee);
+        monthPaidData.push(Math.min(mPaid, mFee));
+    }
+
+    const monthCtx = document.getElementById('annualMonthlyChart');
+    if (monthCtx) {
+        if (annualMonthlyChartInstance) annualMonthlyChartInstance.destroy();
+        annualMonthlyChartInstance = new Chart(monthCtx, {
+            type: 'bar',
+            data: {
+                labels: monthLabels,
+                datasets: [
+                    {
+                        label: '應收費用',
+                        data: monthFeeData,
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: '#2563eb',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    },
+                    {
+                        label: '已收費用',
+                        data: monthPaidData,
+                        backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                        borderColor: '#16a34a',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: val => 'NT$ ' + val.toLocaleString(),
+                            font: { size: 11 }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    x: {
+                        ticks: { font: { size: 12 } },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { padding: 16, usePointStyle: true, pointStyleWidth: 12, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.dataset.label}: NT$ ${ctx.parsed.y.toLocaleString()}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ===== 各單位年度費用圓餅圖 =====
+    const unitMap = {};
+    yearApps.forEach(a => {
+        const unit = a.applicantUnit || '未知';
+        if (!unitMap[unit]) unitMap[unit] = { fee: 0, paid: 0 };
+        unitMap[unit].fee += calculateAnnualFeeForApp(a, year);
+        unitMap[unit].paid += calculateAnnualPaidForApp(a, year);
+    });
+
+    const unitLabels = Object.keys(unitMap).sort((a, b) => unitMap[b].fee - unitMap[a].fee);
+    const unitFees = unitLabels.map(u => unitMap[u].fee);
+    const bgColors = [
+        '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+        '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
+        '#b45309', '#6d28d9', '#047857', '#0e7490'
+    ];
+
+    const unitCtx = document.getElementById('annualUnitChart');
+    if (unitCtx) {
+        if (annualUnitChartInstance) annualUnitChartInstance.destroy();
+        annualUnitChartInstance = new Chart(unitCtx, {
+            type: 'doughnut',
+            data: {
+                labels: unitLabels.map((u, i) => `${u} (NT$ ${unitFees[i].toLocaleString()})`),
+                datasets: [{
+                    data: unitFees,
+                    backgroundColor: bgColors.slice(0, unitLabels.length),
+                    borderWidth: 2,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '50%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const unit = unitLabels[ctx.dataIndex];
+                                const paid = unitMap[unit].paid;
+                                return ` 應收: NT$ ${ctx.parsed.toLocaleString()} / 已收: NT$ ${paid.toLocaleString()}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ===== 年度明細表 =====
+    const tbody = document.getElementById('annualDetailBody');
+    const tfoot = document.getElementById('annualDetailFoot');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    let grandTotal = 0;
+    let grandPaid = 0;
+
+    yearApps.sort((a, b) => {
+        const unitCmp = (a.applicantUnit || '').localeCompare(b.applicantUnit || '');
+        if (unitCmp !== 0) return unitCmp;
+        return a.id - b.id;
+    });
+
+    yearApps.forEach(a => {
+        const aFee = calculateAnnualFeeForApp(a, year);
+        const aPaid = calculateAnnualPaidForApp(a, year);
+        grandTotal += aFee;
+        grandPaid += aPaid;
+
+        const cabinetLabel = a.assignedCabinet !== null
+            ? `${CABINET_NAMES[a.assignedCabinet]} / U${a.assignedStartU}-U${a.assignedStartU + a.uSize - 1}`
+            : '-';
+
+        const statusLabel = aPaid >= aFee ? '已繳清'
+            : aPaid > 0 ? '部分繳費'
+            : '未繳費';
+        const statusClass = aPaid >= aFee ? 'status-paid'
+            : aPaid > 0 ? 'status-partial'
+            : 'status-unpaid';
+
+        const appStart = a.startDate > `${year}-01-01` ? a.startDate : `${year}-01-01`;
+        const appEnd = a.endDate < `${year}-12-31` ? a.endDate : `${year}-12-31`;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>#${a.id}</strong></td>
+            <td>${a.applicantName}</td>
+            <td>${a.applicantUnit}</td>
+            <td>${a.deviceName} (${a.uSize}U)</td>
+            <td>${cabinetLabel}</td>
+            <td>${appStart} ~ ${appEnd}</td>
+            <td><strong>NT$ ${aFee.toLocaleString()}</strong></td>
+            <td>NT$ ${aPaid.toLocaleString()}</td>
+            <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr style="font-weight:700;background:#f1f5f9;">
+                <td colspan="6" style="text-align:right;">${year} 年度合計</td>
+                <td>NT$ ${grandTotal.toLocaleString()}</td>
+                <td>NT$ ${grandPaid.toLocaleString()}</td>
+                <td><span class="status-badge ${grandPaid >= grandTotal ? 'status-paid' : 'status-partial'}">${grandTotal > 0 ? Math.round(grandPaid / grandTotal * 100) : 0}%</span></td>
+            </tr>
+        `;
+    }
+}
+
+// ===== 匯出繳費紀錄 CSV =====
+function exportPaymentCSV() {
+    const allApps = applications.filter(a =>
+        (a.status === 'approved' || a.status === 'installed') && a.fee > 0
+    );
+
+    if (allApps.length === 0) {
+        alert('沒有繳費紀錄可匯出');
+        return;
+    }
+
+    const methodLabels = {
+        transfer: '銀行轉帳',
+        cash: '現金繳費',
+        check: '支票',
+        budget: '校內經費核銷'
+    };
+
+    const headers = [
+        '申請編號', '申請人', '所屬單位', '電子信箱', '設備名稱', 'U數',
+        '機櫃', '起始 U', '使用開始日', '使用到期日',
+        '總費用(NTD)', '已繳金額(NTD)', '剩餘未繳(NTD)',
+        '繳費狀態', '繳費日期', '繳費方式', '繳費憑證',
+        '入帳確認日期', '入帳確認人'
+    ];
+
+    const rows = allApps.map(a => {
+        const statusLabel = a.paymentStatus === 'paid' ? '已繳費'
+            : a.paymentStatus === 'partial' ? '部分繳費'
+            : a.paymentStatus === 'overdue' ? '逾期'
+            : '待繳費';
+        const cabinet = a.assignedCabinet !== null ? CABINET_NAMES[a.assignedCabinet] : '-';
+        const startU = a.assignedStartU || '-';
+        return [
+            a.id,
+            a.applicantName,
+            a.applicantUnit,
+            a.applicantEmail || '',
+            a.deviceName,
+            a.uSize,
+            cabinet,
+            startU,
+            a.startDate || '',
+            a.endDate || '',
+            a.fee,
+            a.paidAmount || 0,
+            getRemainingFee(a),
+            statusLabel,
+            a.paymentDate ? formatDate(a.paymentDate) : '',
+            methodLabels[a.paymentMethod] || a.paymentMethod || '',
+            a.paymentRef || '',
+            a.adminConfirmedDate ? formatDate(a.adminConfirmedDate) : '',
+            a.adminConfirmedBy || ''
+        ];
+    });
+
+    downloadCSV(headers, rows, `繳費紀錄_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+// ===== 匯出年度統計報表 CSV =====
+function exportAnnualReportCSV() {
+    const year = currentAnnualYear;
+    const allApps = applications.filter(a =>
+        (a.status === 'approved' || a.status === 'installed') && a.fee > 0
+    );
+    const yearApps = allApps.filter(a => calculateAnnualFeeForApp(a, year) > 0);
+
+    if (yearApps.length === 0) {
+        alert(`${year} 年度沒有繳費紀錄可匯出`);
+        return;
+    }
+
+    const headers = [
+        '申請編號', '申請人', '所屬單位', '設備名稱', 'U數',
+        '機櫃位置', '年度使用期間',
+        '年度應繳(NTD)', '年度已繳(NTD)', '年度未繳(NTD)', '繳費狀態'
+    ];
+
+    let grandTotal = 0;
+    let grandPaid = 0;
+
+    const rows = yearApps.sort((a, b) => {
+        const cmp = (a.applicantUnit || '').localeCompare(b.applicantUnit || '');
+        if (cmp !== 0) return cmp;
+        return a.id - b.id;
+    }).map(a => {
+        const aFee = calculateAnnualFeeForApp(a, year);
+        const aPaid = calculateAnnualPaidForApp(a, year);
+        const aUnpaid = aFee - aPaid;
+        grandTotal += aFee;
+        grandPaid += aPaid;
+
+        const cabinetLabel = a.assignedCabinet !== null
+            ? `${CABINET_NAMES[a.assignedCabinet]} / U${a.assignedStartU}-U${a.assignedStartU + a.uSize - 1}`
+            : '-';
+        const appStart = a.startDate > `${year}-01-01` ? a.startDate : `${year}-01-01`;
+        const appEnd = a.endDate < `${year}-12-31` ? a.endDate : `${year}-12-31`;
+        const statusLabel = aPaid >= aFee ? '已繳清' : aPaid > 0 ? '部分繳費' : '未繳費';
+
+        return [
+            a.id,
+            a.applicantName,
+            a.applicantUnit,
+            a.deviceName,
+            a.uSize,
+            cabinetLabel,
+            `${appStart} ~ ${appEnd}`,
+            aFee,
+            aPaid,
+            aUnpaid,
+            statusLabel
+        ];
+    });
+
+    // 加上單位小計與總計
+    const unitGroups = {};
+    yearApps.forEach(a => {
+        const unit = a.applicantUnit || '未知';
+        if (!unitGroups[unit]) unitGroups[unit] = { fee: 0, paid: 0 };
+        unitGroups[unit].fee += calculateAnnualFeeForApp(a, year);
+        unitGroups[unit].paid += calculateAnnualPaidForApp(a, year);
+    });
+
+    // 空行
+    rows.push([]);
+    rows.push([`=== ${year} 年度單位小計 ===`]);
+    rows.push(['單位名稱', '', '', '', '', '', '', '應收(NTD)', '已收(NTD)', '未收(NTD)', '收繳率']);
+    Object.keys(unitGroups).sort().forEach(unit => {
+        const g = unitGroups[unit];
+        const rate = g.fee > 0 ? Math.round(g.paid / g.fee * 100) + '%' : '0%';
+        rows.push([unit, '', '', '', '', '', '', g.fee, g.paid, g.fee - g.paid, rate]);
+    });
+
+    rows.push([]);
+    rows.push([`=== ${year} 年度總計 ===`, '', '', '', '', '', '', grandTotal, grandPaid, grandTotal - grandPaid,
+        grandTotal > 0 ? Math.round(grandPaid / grandTotal * 100) + '%' : '0%']);
+
+    downloadCSV(headers, rows, `${year}年度繳費統計報表.csv`);
+}
+
+// ===== 通用 CSV 下載 =====
+function downloadCSV(headers, rows, filename) {
+    // BOM for Excel UTF-8 compatibility
+    const BOM = '\uFEFF';
+    const csvContent = BOM + [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => {
+            const str = String(cell == null ? '' : cell);
+            // 若含逗號、換行、雙引號則用雙引號包裹
+            if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        }).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+}
+
+/**
+ * 產生繳費單編號
+ */
+function generateReceiptNo() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const h = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    const rand = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+    return `RCP-${y}${m}${d}-${h}${min}${s}-${rand}`;
+}
+
+/**
+ * 顯示繳費單
+ * @param {Array<{app: Object, fee: number, payUpToMonth: string|null}>} items - 繳費項目
+ * @param {string} method - 繳費方式
+ * @param {string} ref - 憑證/備註
+ */
+function showReceipt(items, method, ref) {
+    const methodLabels = {
+        transfer: '銀行轉帳',
+        cash: '現金繳費',
+        check: '支票',
+        budget: '校內經費核銷'
+    };
+
+    const receiptNo = generateReceiptNo();
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const timeStr = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    const totalFee = items.reduce((sum, i) => sum + i.fee, 0);
+
+    // 取申請人資訊（使用第一筆）
+    const firstApp = items[0].app;
+    const payerName = firstApp.applicantName || '-';
+    const payerUnit = firstApp.applicantUnit || '-';
+    const payerEmail = firstApp.applicantEmail || '-';
+
+    // 組裝繳費明細列
+    let itemRows = '';
+    items.forEach((item, idx) => {
+        const app = item.app;
+        const cabinetLabel = app.assignedCabinet !== null
+            ? `${CABINET_NAMES[app.assignedCabinet]} / U${app.assignedStartU}-U${app.assignedStartU + app.uSize - 1}`
+            : '-';
+        const periodStart = item.payUpToMonth ? (app.paidUpTo || app.startDate) : app.startDate;
+        let periodEnd;
+        if (item.payUpToMonth) {
+            const parts = item.payUpToMonth.split('-');
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]);
+            const lastDay = new Date(year, month, 0).getDate();
+            periodEnd = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+        } else {
+            periodEnd = app.endDate || '-';
+        }
+
+        itemRows += `
+            <tr>
+                <td>${idx + 1}</td>
+                <td>#${app.id}</td>
+                <td>${app.deviceName} (${app.uSize}U)</td>
+                <td>${cabinetLabel}</td>
+                <td>${periodStart} ~ ${periodEnd}</td>
+                <td class="text-right">NT$ ${item.fee.toLocaleString()}</td>
+            </tr>
+        `;
+    });
+
+    const html = `
+        <div class="receipt-wrap" id="receiptPrintArea">
+            <div class="receipt-header">
+                <div class="receipt-logo">
+                    <i class="fas fa-server"></i> 國立陽明交通大學 生醫資訊研究所
+                </div>
+                <div class="receipt-subtitle">機房設備使用費繳費單</div>
+                <div class="receipt-meta">
+                    <span>繳費單編號：${receiptNo}</span>
+                    <span>列印日期：${dateStr} ${timeStr}</span>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-user"></i> 繳費人資訊</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">姓　　名</span>
+                        <span class="receipt-info-value">${payerName}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">所屬單位</span>
+                        <span class="receipt-info-value">${payerUnit}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">電子信箱</span>
+                        <span class="receipt-info-value">${payerEmail}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">繳費日期</span>
+                        <span class="receipt-info-value">${dateStr}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 繳費明細</div>
+                <table class="receipt-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px">#</th>
+                            <th style="width:70px">編號</th>
+                            <th>設備名稱</th>
+                            <th>機櫃位置</th>
+                            <th>計費期間</th>
+                            <th style="width:120px" class="text-right">金額</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemRows}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="5" class="text-right">應繳總額</td>
+                            <td class="text-right">NT$ ${totalFee.toLocaleString()}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-credit-card"></i> 繳費資訊</div>
+                <div class="receipt-payment-info">
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">繳費方式</span>
+                        <span class="receipt-info-value">${methodLabels[method] || method || '-'}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">憑證/備註</span>
+                        <span class="receipt-info-value">${ref || '-'}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">繳費狀態</span>
+                        <span class="receipt-info-value" style="color:#16a34a;font-weight:700;">已繳費（待入帳確認）</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">項目數量</span>
+                        <span class="receipt-info-value">${items.length} 筆</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-calculator"></i> 費率說明</div>
+                <div class="receipt-info-row">
+                    <span class="receipt-info-label">計費標準</span>
+                    <span class="receipt-info-value">每 U 每月 NT$ ${PRICE_PER_U_PER_MONTH} 元，不足一個月按日數比例計算</span>
+                </div>
+            </div>
+
+            <div class="receipt-footer">
+                <div class="receipt-stamp-row">
+                    <div class="receipt-stamp-box">
+                        <div class="receipt-stamp-line"></div>
+                        <div class="receipt-stamp-label">繳費人簽章</div>
+                    </div>
+                    <div class="receipt-stamp-box">
+                        <div class="receipt-stamp-line"></div>
+                        <div class="receipt-stamp-label">經辦人簽章</div>
+                    </div>
+                    <div class="receipt-stamp-box">
+                        <div class="receipt-stamp-line"></div>
+                        <div class="receipt-stamp-label">主管簽章</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-notice">
+                <div class="receipt-notice-title"><i class="fas fa-info-circle"></i> 注意事項</div>
+                <div>1. 本繳費單僅供繳費證明與內部作業使用，非正式統一發票。</div>
+                <div>2. 繳費後請保留此繳費單作為繳費憑證，待管理員確認入帳後完成繳費程序。</div>
+                <div>3. 如有疑問，請聯繫 BMI 機房管理委員會。</div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('receiptContent').innerHTML = html;
+    document.getElementById('receiptModal').classList.add('active');
+}
+
+/**
+ * 關閉繳費單彈窗
+ */
+function closeReceiptModal(e) {
+    if (e.target === document.getElementById('receiptModal')) closeReceiptModalDirect();
+}
+
+function closeReceiptModalDirect() {
+    document.getElementById('receiptModal').classList.remove('active');
+}
+
+/**
+ * 列印繳費單
+ */
+function printReceipt() {
+    window.print();
+}
+
+/**
+ * 下載繳費單為 PDF（透過瀏覽器列印功能另存 PDF）
+ * 若要純前端產生 PDF 亦可引入 html2pdf 等套件，這裡先用瀏覽器原生方式
+ */
+function downloadReceiptPDF() {
+    // 提示使用者透過列印對話框中的「另存為 PDF」來下載
+    alert('請在列印對話框中選擇「另存為 PDF」或「Save as PDF」作為印表機，即可下載 PDF 檔案。');
+    window.print();
+}
+
+/**
+ * 從繳費紀錄列表中，開啟某筆已繳費申請的繳費單
+ * @param {number} appId - 申請 ID
+ */
+function openReceiptForApp(appId) {
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    const paidAmount = app.paidAmount || app.fee;
+    const method = app.paymentMethod || '';
+    const ref = app.paymentRef || '';
+
+    showReceipt([{
+        app,
+        fee: paidAmount,
+        payUpToMonth: null
+    }], method, ref);
+}
+
+/**
+ * 產生待繳費通知單（給尚未繳費的項目使用）
+ * @param {number} appId - 申請 ID
+ */
+function openPaymentNotice(appId) {
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    const remaining = getRemainingFee(app);
+    const receiptNo = generateReceiptNo();
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const timeStr = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+
+    const cabinetLabel = app.assignedCabinet !== null
+        ? `${CABINET_NAMES[app.assignedCabinet]} / U${app.assignedStartU}-U${app.assignedStartU + app.uSize - 1}`
+        : '-';
+
+    // 繳費期限：核准日後 30 天
+    let deadlineStr = '-';
+    if (app.reviewDate) {
+        const deadline = new Date(app.reviewDate);
+        deadline.setDate(deadline.getDate() + 30);
+        deadlineStr = deadline.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
+    const endDateDisplay = app.endDate || (app.duration === 0 ? '長期' : app.duration + ' 個月');
+
+    const html = `
+        <div class="receipt-wrap" id="receiptPrintArea">
+            <div class="receipt-header">
+                <div class="receipt-logo">
+                    <i class="fas fa-server"></i> 國立陽明交通大學 生醫資訊研究所
+                </div>
+                <div class="receipt-subtitle">機房設備使用費繳費通知單</div>
+                <div class="receipt-meta">
+                    <span>通知單編號：${receiptNo}</span>
+                    <span>列印日期：${dateStr} ${timeStr}</span>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-user"></i> 繳費人資訊</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">姓　　名</span>
+                        <span class="receipt-info-value">${app.applicantName || '-'}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">所屬單位</span>
+                        <span class="receipt-info-value">${app.applicantUnit || '-'}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">電子信箱</span>
+                        <span class="receipt-info-value">${app.applicantEmail || '-'}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">繳費期限</span>
+                        <span class="receipt-info-value" style="color:#dc2626;font-weight:700;">${deadlineStr}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 費用明細</div>
+                <table class="receipt-table">
+                    <thead>
+                        <tr>
+                            <th style="width:70px">編號</th>
+                            <th>設備名稱</th>
+                            <th>機櫃位置</th>
+                            <th>計費期間</th>
+                            <th style="width:120px" class="text-right">金額</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>#${app.id}</td>
+                            <td>${app.deviceName} (${app.uSize}U)</td>
+                            <td>${cabinetLabel}</td>
+                            <td>${app.startDate} ~ ${endDateDisplay}</td>
+                            <td class="text-right">NT$ ${remaining.toLocaleString()}</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="4" class="text-right">應繳總額</td>
+                            <td class="text-right">NT$ ${remaining.toLocaleString()}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-calculator"></i> 費率說明</div>
+                <div class="receipt-info-row">
+                    <span class="receipt-info-label">計費標準</span>
+                    <span class="receipt-info-value">每 U 每月 NT$ ${PRICE_PER_U_PER_MONTH} 元，不足一個月按日數比例計算</span>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-university"></i> 繳費方式</div>
+                <div style="font-size:0.9rem;line-height:1.8;padding:8px 0;">
+                    <div><strong>1. 銀行轉帳</strong>：請洽機房管理委員會取得匯款帳號</div>
+                    <div><strong>2. 現金繳費</strong>：請至 BMI 所辦繳交</div>
+                    <div><strong>3. 校內經費核銷</strong>：請提供計畫編號，透過校內系統核銷</div>
+                </div>
+            </div>
+
+            <div class="receipt-footer">
+                <div class="receipt-stamp-row">
+                    <div class="receipt-stamp-box">
+                        <div class="receipt-stamp-line"></div>
+                        <div class="receipt-stamp-label">繳費人簽章</div>
+                    </div>
+                    <div class="receipt-stamp-box">
+                        <div class="receipt-stamp-line"></div>
+                        <div class="receipt-stamp-label">經辦人簽章</div>
+                    </div>
+                    <div class="receipt-stamp-box">
+                        <div class="receipt-stamp-line"></div>
+                        <div class="receipt-stamp-label">主管簽章</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-notice">
+                <div class="receipt-notice-title"><i class="fas fa-exclamation-triangle"></i> 注意事項</div>
+                <div>1. 請於繳費期限內完成繳費，逾期將影響設備使用權益。</div>
+                <div>2. 繳費完成後請至繳費紀錄頁面回報繳費資訊，以利管理員確認入帳。</div>
+                <div>3. 如有疑問，請聯繫 BMI 機房管理委員會。</div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('receiptContent').innerHTML = html;
+    document.getElementById('receiptModal').classList.add('active');
+}
+
