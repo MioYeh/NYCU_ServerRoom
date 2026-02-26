@@ -974,9 +974,11 @@ async function renderUserTable() {
         const roleLabel = u.role === 'admin' ? '管理員' : u.role === 'committee' ? '機房主委' : '使用者';
         const currentUser = Auth.getCurrentUser();
         const isSelf = currentUser && currentUser.uid === u.uid;
+        const unitDisplay = u.unit ? `<span class="unit-badge" style="display:inline-block;background:#e0f2fe;color:#0369a1;font-size:0.75rem;padding:2px 8px;border-radius:4px;">${u.unit}</span>` : '<span style="color:#94a3b8;font-size:0.8rem">未指定</span>';
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><strong>${u.displayName}</strong><br><small style="color:#94a3b8">${u.email || ''}</small></td>
+            <td>${unitDisplay}</td>
             <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
             <td class="actions-cell">
                 <button class="btn btn-primary btn-xs" onclick="editUser('${u.uid}')">
@@ -1001,6 +1003,16 @@ function openUserModal(editUid) {
     const passwordInput = document.getElementById('userFormPassword');
     form.reset();
 
+    // 填充所屬單位下拉選單
+    const unitSelect = document.getElementById('userFormUnit');
+    unitSelect.innerHTML = '<option value="">-- 未指定 --</option>';
+    ownerUnits.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.name;
+        opt.textContent = u.name;
+        unitSelect.appendChild(opt);
+    });
+
     if (editUid) {
         // 編輯模式
         (async () => {
@@ -1017,6 +1029,7 @@ function openUserModal(editUid) {
             passwordInput.disabled = true;
             passwordInput.required = false;
             document.getElementById('userFormRole').value = user.role;
+            document.getElementById('userFormUnit').value = user.unit || '';
             modal.classList.add('active');
         })();
         return;
@@ -1063,6 +1076,7 @@ async function handleUserFormSubmit(e) {
     const displayName = document.getElementById('userFormDisplayName').value.trim();
     const password = document.getElementById('userFormPassword').value;
     const role = document.getElementById('userFormRole').value;
+    const unit = document.getElementById('userFormUnit').value;
 
     if (!displayName) {
         alert('請填寫顯示名稱');
@@ -1072,14 +1086,14 @@ async function handleUserFormSubmit(e) {
     let result;
     if (original) {
         // 編輯模式：只更新 Firestore profile
-        result = await Auth.updateUser(original, role, displayName);
+        result = await Auth.updateUser(original, role, displayName, unit);
     } else {
         // 新增模式：建立 Firebase Auth 帳號 + Firestore profile
         if (!email || !password) {
             alert('請填寫電子郵件和密碼');
             return;
         }
-        result = await Auth.addUser(email, password, role, displayName);
+        result = await Auth.addUser(email, password, role, displayName, unit);
     }
 
     if (result.success) {

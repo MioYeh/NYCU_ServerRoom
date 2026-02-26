@@ -240,7 +240,7 @@ const Auth = {
 
     // 新增使用者（建立 Firebase Auth 帳號 + Firestore profile）
     // 使用第二個 Firebase App 實例建立帳號，不影響管理員的登入狀態
-    async addUser(email, password, role, displayName) {
+    async addUser(email, password, role, displayName, unit) {
         try {
             // 透過 secondaryAuth 建立帳號，不會影響主實例的 auth.currentUser
             const secondaryAuthInstance = getSecondaryAuth();
@@ -251,7 +251,8 @@ const Auth = {
             await db.collection('users').doc(newUid).set({
                 email,
                 role,
-                displayName
+                displayName,
+                unit: unit || ''
             });
 
             // 立即登出 secondary 實例（僅用於建立帳號）
@@ -279,14 +280,15 @@ const Auth = {
     },
 
     // 更新使用者（僅更新 Firestore profile，密碼無法從前端修改其他使用者的）
-    async updateUser(uid, role, displayName) {
+    async updateUser(uid, role, displayName, unit) {
         try {
-            await db.collection('users').doc(uid).update({ role, displayName });
+            await db.collection('users').doc(uid).update({ role, displayName, unit: unit || '' });
             // 如果修改的是目前登入者，更新快取
             const current = this.getCurrentUser();
             if (current && current.uid === uid) {
                 current.role = role;
                 current.displayName = displayName;
+                current.unit = unit || '';
                 this._cachedProfile = current;
                 localStorage.setItem('bmi_current_user', JSON.stringify(current));
             }

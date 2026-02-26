@@ -33,11 +33,13 @@ function getNextAppId() {
         : 1001;
 }
 
-// ===== 填入設備下拉選單（只顯示自己的已通過/已上架設備）=====
+// ===== 填入設備下拉選單（顯示自己的 + 同單位的已通過/已上架設備）=====
 function populateDeviceDropdown() {
     const select = document.getElementById('renewDevice');
     const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
     if (!currentUser) return;
+
+    const currentUnit = currentUser.unit || '';
 
     // 取得使用者自己的已通過/已上架設備申請（type != 'renewal'）
     const myDevices = applications.filter(a => {
@@ -49,10 +51,21 @@ function populateDeviceDropdown() {
         return isMine && isActive && isDevice;
     });
 
+    // 取得同單位其他人的已通過/已上架設備申請
+    const sameUnitDevices = currentUnit ? applications.filter(a => {
+        const isMine = a.submittedBy === currentUser.uid || 
+                       a.submittedBy === currentUser.username ||
+                       (!a.submittedBy && a.applicantName === currentUser.displayName);
+        const isSameUnit = a.applicantUnit === currentUnit;
+        const isActive = a.status === 'approved' || a.status === 'installed';
+        const isDevice = a.type !== 'renewal';
+        return !isMine && isSameUnit && isActive && isDevice;
+    }) : [];
+
     // 清除現有選項（保留第一個預設選項）
     while (select.options.length > 1) select.remove(1);
 
-    if (myDevices.length === 0) {
+    if (myDevices.length === 0 && sameUnitDevices.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
         opt.textContent = '（目前沒有可續約的設備）';
@@ -61,16 +74,39 @@ function populateDeviceDropdown() {
         return;
     }
 
-    myDevices.forEach(app => {
-        const opt = document.createElement('option');
-        opt.value = app.id;
-        const cabinetLabel = app.assignedCabinet !== null 
-            ? `機櫃${CABINET_NAMES[app.assignedCabinet]} U${app.assignedStartU}` 
-            : '';
-        const effectiveEnd = getEffectiveEndDate(app.id, applications);
-        opt.textContent = `#${app.id} ${app.deviceName} (${app.uSize}U) ${cabinetLabel} — 到期: ${effectiveEnd}`;
-        select.appendChild(opt);
-    });
+    // 加入自己的設備
+    if (myDevices.length > 0) {
+        const group = document.createElement('optgroup');
+        group.label = '我的設備';
+        myDevices.forEach(app => {
+            const opt = document.createElement('option');
+            opt.value = app.id;
+            const cabinetLabel = app.assignedCabinet !== null 
+                ? `機櫃${CABINET_NAMES[app.assignedCabinet]} U${app.assignedStartU}` 
+                : '';
+            const effectiveEnd = getEffectiveEndDate(app.id, applications);
+            opt.textContent = `#${app.id} ${app.deviceName} (${app.uSize}U) ${cabinetLabel} — 到期: ${effectiveEnd}`;
+            group.appendChild(opt);
+        });
+        select.appendChild(group);
+    }
+
+    // 加入同單位其他人的設備
+    if (sameUnitDevices.length > 0) {
+        const group = document.createElement('optgroup');
+        group.label = `同單位設備（${currentUnit}）`;
+        sameUnitDevices.forEach(app => {
+            const opt = document.createElement('option');
+            opt.value = app.id;
+            const cabinetLabel = app.assignedCabinet !== null 
+                ? `機櫃${CABINET_NAMES[app.assignedCabinet]} U${app.assignedStartU}` 
+                : '';
+            const effectiveEnd = getEffectiveEndDate(app.id, applications);
+            opt.textContent = `#${app.id} ${app.deviceName} (${app.uSize}U) ${cabinetLabel} — ${app.applicantName} — 到期: ${effectiveEnd}`;
+            group.appendChild(opt);
+        });
+        select.appendChild(group);
+    }
 }
 
 // ===== 選擇設備後顯示資訊 =====
