@@ -1299,12 +1299,8 @@ async function renderAnnualStats() {
         (a.status === 'approved' || a.status === 'installed') && a.fee > 0
     );
 
-    // 年度內有費用的申請（僅顯示 startDate 落在該年度的申請，避免跨年重複顯示）
-    const yearApps = allApps.filter(a => {
-        if (calculateAnnualFeeForApp(a, year) <= 0) return false;
-        const appStartYear = a.startDate ? parseInt(a.startDate.substring(0, 4)) : null;
-        return appStartYear === year;
-    });
+    // 年度內有費用的申請（計費期間與該年度重疊即顯示）
+    const yearApps = allApps.filter(a => calculateAnnualFeeForApp(a, year) > 0);
 
     // 總統計
     let annualTotal = 0;
