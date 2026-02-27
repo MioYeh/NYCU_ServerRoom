@@ -359,7 +359,7 @@ function initAuthNav() {
         const userBlock = document.createElement('div');
         userBlock.className = 'nav-user';
         userBlock.innerHTML = `
-            <span class="nav-user-name"><i class="fas fa-user-circle"></i> ${user.displayName}</span>
+            <span class="nav-user-name"><i class="fas fa-user-circle"></i> ${escapeHTML(user.displayName)}</span>
             <button class="nav-logout-btn" onclick="Auth.logout()" title="登出">
                 <i class="fas fa-sign-out-alt"></i> 登出
             </button>

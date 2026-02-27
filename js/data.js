@@ -19,6 +19,21 @@
  * }
  */
 
+/**
+ * HTML 特殊字元跳脫，防止 XSS
+ * @param {*} str - 要跳脫的值（非字串會先轉型）
+ * @returns {string} 跳脫後的安全字串
+ */
+function escapeHTML(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 const CABINET_NAMES = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
 const CABINET_U = [41, 41, 41, 41, 42, 42, 42, 42]; // BCDE=41U, FGHI=42U
 

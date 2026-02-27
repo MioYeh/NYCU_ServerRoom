@@ -192,7 +192,7 @@ function renderLegend() {
         const item = document.createElement('div');
         item.className = 'legend-item';
         if (selectedOwner === owner) item.classList.add('active');
-        item.innerHTML = `<span class="legend-color" style="background:${ownerColorMap[owner]}"></span>${owner}`;
+        item.innerHTML = `<span class="legend-color" style="background:${ownerColorMap[owner]}"></span>${escapeHTML(owner)}`;
         item.addEventListener('click', () => toggleOwnerHighlight(owner));
         bar.appendChild(item);
     });
@@ -284,13 +284,13 @@ function showTooltip(e, device) {
     const tip = document.getElementById('tooltip');
     const color = ownerColorMap[device.owner] || '#64748b';
     tip.innerHTML = `
-        <div class="tip-title">${device.name}</div>
-        <div class="tip-row"><span class="tip-label">擁有者</span><span class="tip-value" style="color:${color};font-weight:600">${device.owner}</span></div>
-        <div class="tip-row"><span class="tip-label">大小</span><span class="tip-value">${device.uSize}U (U${device.startU}-U${device.startU + device.uSize - 1})</span></div>
+        <div class="tip-title">${escapeHTML(device.name)}</div>
+        <div class="tip-row"><span class="tip-label">擁有者</span><span class="tip-value" style="color:${color};font-weight:600">${escapeHTML(device.owner)}</span></div>
+        <div class="tip-row"><span class="tip-label">大小</span><span class="tip-value">${escapeHTML(device.uSize)}U (U${escapeHTML(device.startU)}-U${device.startU + device.uSize - 1})</span></div>
         <div class="tip-row"><span class="tip-label">位置</span><span class="tip-value">機櫃 ${CABINET_NAMES[device.cabinet]}</span></div>
-        ${device.ip ? `<div class="tip-row"><span class="tip-label">IP</span><span class="tip-value">${device.ip}</span></div>` : ''}
-        ${device.contact ? `<div class="tip-row"><span class="tip-label">聯絡人</span><span class="tip-value">${device.contact}</span></div>` : ''}
-        ${device.description ? `<div class="tip-row"><span class="tip-label">備註</span><span class="tip-value">${device.description}</span></div>` : ''}
+        ${device.ip ? `<div class="tip-row"><span class="tip-label">IP</span><span class="tip-value">${escapeHTML(device.ip)}</span></div>` : ''}
+        ${device.contact ? `<div class="tip-row"><span class="tip-label">聯絡人</span><span class="tip-value">${escapeHTML(device.contact)}</span></div>` : ''}
+        ${device.description ? `<div class="tip-row"><span class="tip-label">備註</span><span class="tip-value">${escapeHTML(device.description)}</span></div>` : ''}
     `;
     tip.style.display = 'block';
     moveTooltip(e);
@@ -322,35 +322,35 @@ function showDetailModal(device) {
     content.innerHTML = `
         <div class="detail-row">
             <span class="detail-label">設備名稱</span>
-            <span class="detail-value"><strong>${device.name}</strong></span>
+            <span class="detail-value"><strong>${escapeHTML(device.name)}</strong></span>
         </div>
         <div class="detail-row">
             <span class="detail-label">機櫃位置</span>
-            <span class="detail-value">機櫃 ${CABINET_NAMES[device.cabinet]} (U${device.startU} - U${device.startU + device.uSize - 1})</span>
+            <span class="detail-value">機櫃 ${CABINET_NAMES[device.cabinet]} (U${escapeHTML(device.startU)} - U${device.startU + device.uSize - 1})</span>
         </div>
         <div class="detail-row">
             <span class="detail-label">設備大小</span>
-            <span class="detail-value">${device.uSize}U</span>
+            <span class="detail-value">${escapeHTML(device.uSize)}U</span>
         </div>
         <div class="detail-row">
             <span class="detail-label">擁有者</span>
-            <span class="detail-value"><span class="owner-color-badge" style="background:${color}"></span>${device.owner}</span>
+            <span class="detail-value"><span class="owner-color-badge" style="background:${color}"></span>${escapeHTML(device.owner)}</span>
         </div>
         <div class="detail-row">
             <span class="detail-label">聯絡人</span>
-            <span class="detail-value">${device.contact || '-'}</span>
+            <span class="detail-value">${escapeHTML(device.contact) || '-'}</span>
         </div>
         <div class="detail-row">
             <span class="detail-label">信箱</span>
-            <span class="detail-value">${device.email ? `<a href="mailto:${device.email}">${device.email}</a>` : '-'}</span>
+            <span class="detail-value">${device.email ? `<a href="mailto:${escapeHTML(device.email)}">${escapeHTML(device.email)}</a>` : '-'}</span>
         </div>
         <div class="detail-row">
             <span class="detail-label">IP 位址</span>
-            <span class="detail-value">${device.ip || '-'}</span>
+            <span class="detail-value">${escapeHTML(device.ip) || '-'}</span>
         </div>
         <div class="detail-row">
             <span class="detail-label">備註</span>
-            <span class="detail-value">${device.description || '-'}</span>
+            <span class="detail-value">${escapeHTML(device.description) || '-'}</span>
         </div>
     `;
     document.getElementById('detailModal').classList.add('active');

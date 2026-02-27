@@ -7,10 +7,12 @@
 let applications = [];
 let paymentFilter = 'all';
 let batchPayItems = []; // 批次繳費項目
+let paymentListYear = new Date().getFullYear(); // 主清單顯示年度
 
 document.addEventListener('DOMContentLoaded', async () => {
     await loadApplications();
     initPaymentPage();
+    updatePaymentListYearLabel();
     renderPaymentList();
     renderPaymentCharts();
 
@@ -88,19 +90,36 @@ function setPaymentFilter(filter, btn) {
     renderPaymentList();
 }
 
+// ===== 主清單年度切換 =====
+function changePaymentListYear(delta) {
+    paymentListYear += delta;
+    updatePaymentListYearLabel();
+    renderPaymentList();
+    renderPaymentCharts();
+    renderAnnualStats();
+}
+
+function updatePaymentListYearLabel() {
+    const label = document.getElementById('paymentListYearLabel');
+    if (label) label.textContent = `${paymentListYear} 年`;
+}
+
 // ===== 取得需要繳費的申請 (approved 或 installed 且有費用) =====
 function getPayableApplications() {
-    const currentYear = new Date().getFullYear();
-    const currentYearStart = `${currentYear}-01-01`;
+    const year = paymentListYear;
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
 
     let apps = applications.filter(a =>
         (a.status === 'approved' || a.status === 'installed') && a.fee > 0
     );
 
-    // 過濾掉計費期間已在今年之前結束的申請（例如 2025 的申請不會在 2026 顯示）
+    // 顯示計費期間與所選年度有重疊的申請
     apps = apps.filter(a => {
         if (!a.endDate) return true; // 沒有結束日期的保留
-        return a.endDate >= currentYearStart;
+        // 計費期間需與所選年度有重疊：startDate <= yearEnd && endDate >= yearStart
+        const appStart = a.startDate || '';
+        return a.endDate >= yearStart && appStart <= yearEnd;
     });
 
     // 自動補正：若 paymentStatus 未設定，視為 unpaid
@@ -303,11 +322,11 @@ function renderPaymentItemsPreview(unpaidApps, payUpToMonth) {
                 ${isSkipped ? '' : `<input type="checkbox" class="pay-item-check" data-app-id="${app.id}" data-fee="${fee}" checked onchange="recalcSelectedTotal()">`}
                 <div class="preview-item-info">
                     <div class="preview-item-name">
-                        <strong>#${app.id}</strong> ${app.deviceName} (${app.uSize}U)
+                        <strong>#${escapeHTML(app.id)}</strong> ${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)
                     </div>
                     <div class="preview-item-meta">
-                        ${cabinetLabel} ｜ ${effectiveStart} ~ ${app.endDate}
-                        ${app.paidUpTo ? `<span class="badge-inline badge-partial">已繳到 ${app.paidUpTo}</span>` : ''}
+                        ${escapeHTML(cabinetLabel)} ｜ ${escapeHTML(effectiveStart)} ~ ${escapeHTML(app.endDate)}
+                        ${app.paidUpTo ? `<span class="badge-inline badge-partial">已繳到 ${escapeHTML(app.paidUpTo)}</span>` : ''}
                     </div>
                 </div>
                 <div class="preview-item-fee">
@@ -416,7 +435,7 @@ function openBatchPayModal() {
         const app = applications.find(a => a.id === item.appId);
         if (app) {
             infoHTML += `<div class="detail-row" style="font-size:0.85rem;">
-                <span class="detail-label">#${app.id} ${app.deviceName}</span>
+                <span class="detail-label">#${escapeHTML(app.id)} ${escapeHTML(app.deviceName)}</span>
                 <span class="detail-value">NT$ ${item.fee.toLocaleString()}</span>
             </div>`;
         }
@@ -582,11 +601,11 @@ async function renderPaymentList() {
         }
 
         tr.innerHTML = `
-            <td><strong>#${app.id}</strong></td>
-            <td>${app.applicantName}</td>
-            <td>${app.applicantUnit}</td>
-            <td>${app.deviceName} (${app.uSize}U)</td>
-            <td>${cabinetLabel}</td>
+            <td><strong>#${escapeHTML(app.id)}</strong></td>
+            <td>${escapeHTML(app.applicantName)}</td>
+            <td>${escapeHTML(app.applicantUnit)}</td>
+            <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
+            <td>${escapeHTML(cabinetLabel)}</td>
             <td>${feeDisplay}</td>
             <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
             <td>${app.paymentDate ? formatDate(app.paymentDate) : (app.paidUpTo ? '繳到 ' + app.paidUpTo : '-')}</td>
@@ -649,10 +668,10 @@ function openPayModal(appId) {
 
     let infoHTML = `
         <div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:16px;">
-            <div class="detail-row"><span class="detail-label">申請編號</span><span class="detail-value">#${app.id}</span></div>
-            <div class="detail-row"><span class="detail-label">設備</span><span class="detail-value">${app.deviceName}</span></div>
-            <div class="detail-row"><span class="detail-label">申請人</span><span class="detail-value">${app.applicantName} / ${app.applicantUnit}</span></div>
-            <div class="detail-row"><span class="detail-label">使用期間</span><span class="detail-value">${app.startDate} ~ ${endDateLabel}</span></div>
+            <div class="detail-row"><span class="detail-label">申請編號</span><span class="detail-value">#${escapeHTML(app.id)}</span></div>
+            <div class="detail-row"><span class="detail-label">設備</span><span class="detail-value">${escapeHTML(app.deviceName)}</span></div>
+            <div class="detail-row"><span class="detail-label">申請人</span><span class="detail-value">${escapeHTML(app.applicantName)} / ${escapeHTML(app.applicantUnit)}</span></div>
+            <div class="detail-row"><span class="detail-label">使用期間</span><span class="detail-value">${escapeHTML(app.startDate)} ~ ${escapeHTML(endDateLabel)}</span></div>
     `;
 
     if (app.paidAmount > 0) {
@@ -870,14 +889,14 @@ function openPayDetail(appId) {
     content.innerHTML = `
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-file-alt"></i> 申請資訊</div>
-            <div class="detail-row"><span class="detail-label">申請編號</span><span class="detail-value">#${app.id}</span></div>
-            <div class="detail-row"><span class="detail-label">申請人</span><span class="detail-value">${app.applicantName}</span></div>
-            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${app.applicantUnit}</span></div>
-            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${app.applicantEmail}</span></div>
-            <div class="detail-row"><span class="detail-label">設備</span><span class="detail-value">${app.deviceName} (${app.uSize}U)</span></div>
-            <div class="detail-row"><span class="detail-label">機櫃位置</span><span class="detail-value">${app.assignedCabinet !== null ? '機櫃 ' + CABINET_NAMES[app.assignedCabinet] + ' U' + app.assignedStartU + '-U' + (app.assignedStartU + app.uSize - 1) : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">上架日期</span><span class="detail-value">${app.startDate}</span></div>
-            <div class="detail-row"><span class="detail-label">使用到期日</span><span class="detail-value">${endDateDisplay}</span></div>
+            <div class="detail-row"><span class="detail-label">申請編號</span><span class="detail-value">#${escapeHTML(app.id)}</span></div>
+            <div class="detail-row"><span class="detail-label">申請人</span><span class="detail-value">${escapeHTML(app.applicantName)}</span></div>
+            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${escapeHTML(app.applicantUnit)}</span></div>
+            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${escapeHTML(app.applicantEmail)}</span></div>
+            <div class="detail-row"><span class="detail-label">設備</span><span class="detail-value">${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</span></div>
+            <div class="detail-row"><span class="detail-label">機櫃位置</span><span class="detail-value">${app.assignedCabinet !== null ? '機櫃 ' + CABINET_NAMES[app.assignedCabinet] + ' U' + escapeHTML(app.assignedStartU) + '-U' + (app.assignedStartU + app.uSize - 1) : '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">上架日期</span><span class="detail-value">${escapeHTML(app.startDate)}</span></div>
+            <div class="detail-row"><span class="detail-label">使用到期日</span><span class="detail-value">${escapeHTML(endDateDisplay)}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-credit-card"></i> 繳費資訊</div>
@@ -1003,21 +1022,13 @@ function formatDate(dateStr) {
 // ===== 圖表相關 (僅管理員顯示) =====
 let statusChartInstance = null;
 let unitChartInstance = null;
-let currentChartYear = new Date().getFullYear();
-
-function changeChartYear(delta) {
-    currentChartYear += delta;
-    renderPaymentCharts();
-}
 
 async function renderPaymentCharts() {
     if (!isAdminUser()) return;
 
     await loadApplications();
 
-    const year = currentChartYear;
-    const yearLabel = document.getElementById('chartYearLabel');
-    if (yearLabel) yearLabel.textContent = `${year} 年度`;
+    const year = paymentListYear;
 
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
@@ -1221,14 +1232,8 @@ async function renderPaymentCharts() {
 // ===== 繳費單 Receipt =====
 
 // ===== 年度繳費統計 =====
-let currentAnnualYear = new Date().getFullYear();
 let annualMonthlyChartInstance = null;
 let annualUnitChartInstance = null;
-
-function changeAnnualYear(delta) {
-    currentAnnualYear += delta;
-    renderAnnualStats();
-}
 
 /**
  * 計算某筆申請在指定年度內的應繳費用
@@ -1290,9 +1295,7 @@ function calculateAnnualPaidForApp(app, year) {
 async function renderAnnualStats() {
     if (!isAdminUser()) return;
 
-    const year = currentAnnualYear;
-    const yearLabel = document.getElementById('annualYearLabel');
-    if (yearLabel) yearLabel.textContent = `${year} 年度`;
+    const year = paymentListYear;
 
     // 取得所有有費用的申請
     const allApps = applications.filter(a =>
@@ -1507,11 +1510,11 @@ async function renderAnnualStats() {
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><strong>#${a.id}</strong></td>
-            <td>${a.applicantName}</td>
-            <td>${a.applicantUnit}</td>
-            <td>${a.deviceName} (${a.uSize}U)</td>
-            <td>${cabinetLabel}</td>
+            <td><strong>#${escapeHTML(a.id)}</strong></td>
+            <td>${escapeHTML(a.applicantName)}</td>
+            <td>${escapeHTML(a.applicantUnit)}</td>
+            <td>${escapeHTML(a.deviceName)} (${escapeHTML(a.uSize)}U)</td>
+            <td>${escapeHTML(cabinetLabel)}</td>
             <td>${appStart} ~ ${appEnd}</td>
             <td><strong>NT$ ${aFee.toLocaleString()}</strong></td>
             <td>NT$ ${aPaid.toLocaleString()}</td>
@@ -1593,7 +1596,7 @@ function exportPaymentCSV() {
 
 // ===== 匯出年度統計報表 CSV =====
 function exportAnnualReportCSV() {
-    const year = currentAnnualYear;
+    const year = paymentListYear;
     const allApps = applications.filter(a =>
         (a.status === 'approved' || a.status === 'installed') && a.fee > 0
     );
@@ -1736,9 +1739,9 @@ function showReceipt(items, method, ref) {
 
     // 取申請人資訊（使用第一筆）
     const firstApp = items[0].app;
-    const payerName = firstApp.applicantName || '-';
-    const payerUnit = firstApp.applicantUnit || '-';
-    const payerEmail = firstApp.applicantEmail || '-';
+    const payerName = escapeHTML(firstApp.applicantName || '-');
+    const payerUnit = escapeHTML(firstApp.applicantUnit || '-');
+    const payerEmail = escapeHTML(firstApp.applicantEmail || '-');
 
     // 組裝繳費明細列
     let itemRows = '';
@@ -1762,10 +1765,10 @@ function showReceipt(items, method, ref) {
         itemRows += `
             <tr>
                 <td>${idx + 1}</td>
-                <td>#${app.id}</td>
-                <td>${app.deviceName} (${app.uSize}U)</td>
-                <td>${cabinetLabel}</td>
-                <td>${periodStart} ~ ${periodEnd}</td>
+                <td>#${escapeHTML(app.id)}</td>
+                <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
+                <td>${escapeHTML(cabinetLabel)}</td>
+                <td>${escapeHTML(periodStart)} ~ ${escapeHTML(periodEnd)}</td>
                 <td class="text-right">NT$ ${item.fee.toLocaleString()}</td>
             </tr>
         `;
@@ -1840,7 +1843,7 @@ function showReceipt(items, method, ref) {
                     </div>
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">憑證/備註</span>
-                        <span class="receipt-info-value">${ref || '-'}</span>
+                        <span class="receipt-info-value">${escapeHTML(ref) || '-'}</span>
                     </div>
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">繳費狀態</span>
@@ -1984,15 +1987,15 @@ function openPaymentNotice(appId) {
                 <div class="receipt-info-grid">
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">姓　　名</span>
-                        <span class="receipt-info-value">${app.applicantName || '-'}</span>
+                        <span class="receipt-info-value">${escapeHTML(app.applicantName || '-')}</span>
                     </div>
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">所屬單位</span>
-                        <span class="receipt-info-value">${app.applicantUnit || '-'}</span>
+                        <span class="receipt-info-value">${escapeHTML(app.applicantUnit || '-')}</span>
                     </div>
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">電子信箱</span>
-                        <span class="receipt-info-value">${app.applicantEmail || '-'}</span>
+                        <span class="receipt-info-value">${escapeHTML(app.applicantEmail || '-')}</span>
                     </div>
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">繳費期限</span>
@@ -2015,10 +2018,10 @@ function openPaymentNotice(appId) {
                     </thead>
                     <tbody>
                         <tr>
-                            <td>#${app.id}</td>
-                            <td>${app.deviceName} (${app.uSize}U)</td>
-                            <td>${cabinetLabel}</td>
-                            <td>${app.startDate} ~ ${endDateDisplay}</td>
+                            <td>#${escapeHTML(app.id)}</td>
+                            <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
+                            <td>${escapeHTML(cabinetLabel)}</td>
+                            <td>${escapeHTML(app.startDate)} ~ ${escapeHTML(endDateDisplay)}</td>
                             <td class="text-right">NT$ ${remaining.toLocaleString()}</td>
                         </tr>
                     </tbody>

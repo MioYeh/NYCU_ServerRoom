@@ -425,19 +425,19 @@ function renderMyRenewals() {
         card.innerHTML = `
             <div class="app-card-header">
                 <div>
-                    <div class="app-card-title"><i class="fas fa-rotate" style="color:#3b82f6;margin-right:4px;"></i> ${app.deviceName}</div>
-                    <div class="app-card-id">#${app.id} (原 #${app.originalAppId})</div>
+                    <div class="app-card-title"><i class="fas fa-rotate" style="color:#3b82f6;margin-right:4px;"></i> ${escapeHTML(app.deviceName)}</div>
+                    <div class="app-card-id">#${escapeHTML(app.id)} (原 #${escapeHTML(app.originalAppId)})</div>
                 </div>
-                <span class="status-badge status-${app.status}">${statusInfo.icon} ${statusInfo.label}</span>
+                <span class="status-badge status-${escapeHTML(app.status)}">${statusInfo.icon} ${statusInfo.label}</span>
             </div>
             <div class="app-card-body">
-                <div class="info-row"><span class="info-label">申請人</span><span>${app.applicantName} / ${app.applicantUnit}</span></div>
-                <div class="info-row"><span class="info-label">延期</span><span>${app.originalEndDate || app.startDate} → ${app.endDate}</span></div>
-                <div class="info-row"><span class="info-label">位置</span><span>${cabinetLabel}</span></div>
+                <div class="info-row"><span class="info-label">申請人</span><span>${escapeHTML(app.applicantName)} / ${escapeHTML(app.applicantUnit)}</span></div>
+                <div class="info-row"><span class="info-label">延期</span><span>${escapeHTML(app.originalEndDate || app.startDate)} → ${escapeHTML(app.endDate)}</span></div>
+                <div class="info-row"><span class="info-label">位置</span><span>${escapeHTML(cabinetLabel)}</span></div>
             </div>
             <div class="app-card-footer">
                 <span class="app-card-date"><i class="fas fa-calendar"></i> ${formatDate(app.submitDate)}</span>
-                <span class="status-badge status-${app.paymentStatus}">
+                <span class="status-badge status-${escapeHTML(app.paymentStatus)}">
                     ${app.paymentStatus === 'paid' ? '✓ 已繳費' : '$ NT$' + (app.fee || 0).toLocaleString()}
                 </span>
             </div>
@@ -509,29 +509,29 @@ function showRenewDetail(app) {
 
     content.innerHTML = `
         <div style="text-align:center;margin-bottom:16px;">
-            <span class="status-badge status-${app.status}" style="font-size:0.9rem;padding:6px 16px;">
+            <span class="status-badge status-${escapeHTML(app.status)}" style="font-size:0.9rem;padding:6px 16px;">
                 ${statusInfo.icon} ${statusInfo.label}
             </span>
-            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">繳費申請 #${app.id}　(原設備申請 #${app.originalAppId})</div>
+            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">繳費申請 #${escapeHTML(app.id)}　(原設備申請 #${escapeHTML(app.originalAppId)})</div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-user"></i> 申請人資訊</div>
-            <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${app.applicantName}</span></div>
-            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${app.applicantUnit}</span></div>
-            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${app.applicantEmail}</span></div>
+            <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${escapeHTML(app.applicantName)}</span></div>
+            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${escapeHTML(app.applicantUnit)}</span></div>
+            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${escapeHTML(app.applicantEmail)}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-server"></i> 設備資訊</div>
-            <div class="detail-row"><span class="detail-label">設備名稱</span><span class="detail-value">${app.deviceName}</span></div>
-            <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${app.deviceModel || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${app.uSize}U</span></div>
-            <div class="detail-row"><span class="detail-label">機櫃位置</span><span class="detail-value">${app.assignedCabinet !== null ? '機櫃 ' + CABINET_NAMES[app.assignedCabinet] + ' U' + app.assignedStartU + '-U' + (app.assignedStartU + app.uSize - 1) : '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">設備名稱</span><span class="detail-value">${escapeHTML(app.deviceName)}</span></div>
+            <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${escapeHTML(app.deviceModel) || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${escapeHTML(app.uSize)}U</span></div>
+            <div class="detail-row"><span class="detail-label">機櫃位置</span><span class="detail-value">${app.assignedCabinet !== null ? '機櫃 ' + CABINET_NAMES[app.assignedCabinet] + ' U' + escapeHTML(app.assignedStartU) + '-U' + (app.assignedStartU + app.uSize - 1) : '-'}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-calendar-plus"></i> 延期資訊</div>
-            <div class="detail-row"><span class="detail-label">原到期日</span><span class="detail-value">${app.originalEndDate || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">延期起始</span><span class="detail-value">${app.startDate}</span></div>
-            <div class="detail-row"><span class="detail-label">新到期日</span><span class="detail-value" style="color:#16a34a;font-weight:700;">${app.endDate}</span></div>
+            <div class="detail-row"><span class="detail-label">原到期日</span><span class="detail-value">${escapeHTML(app.originalEndDate) || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">延期起始</span><span class="detail-value">${escapeHTML(app.startDate)}</span></div>
+            <div class="detail-row"><span class="detail-label">新到期日</span><span class="detail-value" style="color:#16a34a;font-weight:700;">${escapeHTML(app.endDate)}</span></div>
             <div class="detail-row"><span class="detail-label">申請日期</span><span class="detail-value">${formatDate(app.submitDate)}</span></div>
         </div>
         <div class="detail-section">
@@ -542,17 +542,17 @@ function showRenewDetail(app) {
             ${app.paymentMethod ? `<div class="detail-row"><span class="detail-label">繳費方式</span><span class="detail-value">${{
                 transfer: '銀行轉帳', cash: '現金繳費', check: '支票', budget: '校內經費核銷'
             }[app.paymentMethod] || app.paymentMethod}</span></div>` : ''}
-            ${app.budgetProject ? `<div class="detail-row"><span class="detail-label">計畫編號</span><span class="detail-value" style="font-weight:600;color:#7c3aed;">${app.budgetProject}</span></div>` : ''}
+            ${app.budgetProject ? `<div class="detail-row"><span class="detail-label">計畫編號</span><span class="detail-value" style="font-weight:600;color:#7c3aed;">${escapeHTML(app.budgetProject)}</span></div>` : ''}
         </div>
         ${app.adminNotes ? `
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-comment"></i> 管理員備註</div>
-            <p style="color:#475569;font-size:0.9rem;">${app.adminNotes}</p>
+            <p style="color:#475569;font-size:0.9rem;">${escapeHTML(app.adminNotes)}</p>
         </div>` : ''}
         ${app.notes ? `
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-sticky-note"></i> 申請備註</div>
-            <p style="color:#475569;font-size:0.9rem;">${app.notes}</p>
+            <p style="color:#475569;font-size:0.9rem;">${escapeHTML(app.notes)}</p>
         </div>` : ''}
     `;
 

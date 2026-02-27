@@ -82,6 +82,11 @@
                 </div>
             </div>
             <div class="toolbar-right">
+                <div class="year-selector" style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;">
+                    <button class="btn btn-secondary btn-xs" onclick="changePaymentListYear(-1)" title="前一年"><i class="fas fa-chevron-left"></i></button>
+                    <span id="paymentListYearLabel" style="font-weight:600;font-size:0.9rem;min-width:60px;text-align:center;"></span>
+                    <button class="btn btn-secondary btn-xs" onclick="changePaymentListYear(1)" title="後一年"><i class="fas fa-chevron-right"></i></button>
+                </div>
                 <input type="text" id="paymentSearch" placeholder="搜尋申請人/設備名..." class="search-input" oninput="renderPaymentList()">
             </div>
         </div>
@@ -102,15 +107,6 @@
         <div class="chart-dashboard" id="chartDashboard">
             <div class="chart-header">
                 <h2><i class="fas fa-chart-pie"></i> 費用收取狀況總覽</h2>
-                <div class="annual-year-selector">
-                    <button class="btn btn-secondary btn-sm" onclick="changeChartYear(-1)">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <span class="annual-year-label" id="chartYearLabel">2026 年度</span>
-                    <button class="btn btn-secondary btn-sm" onclick="changeChartYear(1)">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
             </div>
             <div class="chart-stats-row">
                 <div class="chart-stat-card stat-total">
@@ -162,15 +158,6 @@
         <div class="annual-stats-section" id="annualStatsSection" style="display:none">
             <div class="chart-header">
                 <h2><i class="fas fa-calendar-alt"></i> 年度繳費統計</h2>
-                <div class="annual-year-selector">
-                    <button class="btn btn-secondary btn-sm" onclick="changeAnnualYear(-1)">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <span class="annual-year-label" id="annualYearLabel">2025 年度</span>
-                    <button class="btn btn-secondary btn-sm" onclick="changeAnnualYear(1)">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
             </div>
             <div class="chart-stats-row">
                 <div class="chart-stat-card stat-total">

@@ -295,35 +295,35 @@ function renderAppListInto(listId, filtered, sectionLabel, search) {
         card.innerHTML = `
             <div class="admin-card-main">
                 <div class="admin-card-status">
-                    <span class="status-badge status-${app.status}">${statusInfo.icon} ${statusInfo.label}</span>
-                    <div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">#${app.id}</div>
+                    <span class="status-badge status-${escapeHTML(app.status)}">${statusInfo.icon} ${statusInfo.label}</span>
+                    <div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">#${escapeHTML(app.id)}</div>
                     ${typeBadge}
                     ${approvalHTML}
                 </div>
                 <div class="admin-card-info">
                     <div class="info-group">
                         <label>申請人</label>
-                        <span>${app.applicantName}</span>
+                        <span>${escapeHTML(app.applicantName)}</span>
                     </div>
                     <div class="info-group">
                         <label>單位</label>
-                        <span>${app.applicantUnit}</span>
+                        <span>${escapeHTML(app.applicantUnit)}</span>
                     </div>
                     <div class="info-group">
                         <label>設備</label>
-                        <span>${app.deviceName} (${app.uSize}U)</span>
+                        <span>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</span>
                     </div>
                     <div class="info-group">
                         <label>位置</label>
-                        <span>${cabinetLabel}</span>
+                        <span>${escapeHTML(cabinetLabel)}</span>
                     </div>
                     <div class="info-group">
                         <label>${isRenewal ? '類型' : '申請日期'}</label>
-                        <span>${isRenewal ? '繳費延期 (原#' + app.originalAppId + ')' : formatDate(app.submitDate)}</span>
+                        <span>${isRenewal ? '繳費延期 (原#' + escapeHTML(app.originalAppId) + ')' : formatDate(app.submitDate)}</span>
                     </div>
                     <div class="info-group">
                         <label>${isRenewal ? '延期至' : '上架日期'}</label>
-                        <span>${isRenewal ? app.endDate : app.startDate}</span>
+                        <span>${isRenewal ? escapeHTML(app.endDate) : escapeHTML(app.startDate)}</span>
                     </div>
                 </div>
                 <div class="admin-card-actions">
@@ -414,7 +414,7 @@ function openReviewModal(appId) {
                 ${statusInfo.icon} ${statusInfo.label}
             </span>
             ${isRenewal ? '<div style="margin-top:6px;"><span style="background:#dbeafe;color:#2563eb;font-size:0.8rem;padding:3px 10px;border-radius:6px;"><i class="fas fa-rotate"></i> 繳費延期申請</span></div>' : ''}
-            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${app.id}${isRenewal ? ' (原申請 #' + app.originalAppId + ')' : ''}</div>
+            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${escapeHTML(app.id)}${isRenewal ? ' (原申請 #' + escapeHTML(app.originalAppId) + ')' : ''}</div>
         </div>
         ${app.status === 'pending' && !isRenewal ? `
         <div class="detail-section">
@@ -422,47 +422,47 @@ function openReviewModal(appId) {
             <div class="detail-row">
                 <span class="detail-label">管理員審核</span>
                 <span class="detail-value">${app.adminApproval && app.adminApproval.approved
-                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span> <small>(' + (app.adminApproval.byName || '') + ' ' + formatDate(app.adminApproval.date) + ')</small>'
+                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span> <small>(' + escapeHTML(app.adminApproval.byName || '') + ' ' + formatDate(app.adminApproval.date) + ')</small>'
                     : '<span class="status-badge status-pending"><i class="fas fa-clock"></i> 待審核</span>'}</span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">主委審核</span>
                 <span class="detail-value">${app.committeeApproval && app.committeeApproval.approved
-                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span> <small>(' + (app.committeeApproval.byName || '') + ' ' + formatDate(app.committeeApproval.date) + ')</small>'
+                    ? '<span class="status-badge status-approved"><i class="fas fa-check-circle"></i> 已核准</span> <small>(' + escapeHTML(app.committeeApproval.byName || '') + ' ' + formatDate(app.committeeApproval.date) + ')</small>'
                     : '<span class="status-badge status-pending"><i class="fas fa-clock"></i> 待審核</span>'}</span>
             </div>
         </div>` : ''}
         ${isRenewal ? `
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-calendar-plus"></i> 延期資訊</div>
-            <div class="detail-row"><span class="detail-label">原到期日</span><span class="detail-value">${app.originalEndDate || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">延期起始</span><span class="detail-value">${app.startDate}</span></div>
-            <div class="detail-row"><span class="detail-label">新到期日</span><span class="detail-value" style="color:#16a34a;font-weight:700;">${app.endDate}</span></div>
+            <div class="detail-row"><span class="detail-label">原到期日</span><span class="detail-value">${escapeHTML(app.originalEndDate) || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">延期起始</span><span class="detail-value">${escapeHTML(app.startDate)}</span></div>
+            <div class="detail-row"><span class="detail-label">新到期日</span><span class="detail-value" style="color:#16a34a;font-weight:700;">${escapeHTML(app.endDate)}</span></div>
             <div class="detail-row"><span class="detail-label">延期費用</span><span class="detail-value" style="font-weight:700;">NT$ ${(app.fee || 0).toLocaleString()}</span></div>
             <div class="detail-row"><span class="detail-label">繳費狀態</span><span class="detail-value"><span class="status-badge status-${app.paymentStatus}">${app.paymentStatus === 'paid' ? '已繳費' : '待繳費'}</span></span></div>
         </div>` : ''}
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-user"></i> 申請人資訊</div>
-            <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${app.applicantName}</span></div>
-            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${app.applicantUnit}</span></div>
-            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${app.applicantEmail}</span></div>
-            <div class="detail-row"><span class="detail-label">電話</span><span class="detail-value">${app.applicantPhone || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${escapeHTML(app.applicantName)}</span></div>
+            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${escapeHTML(app.applicantUnit)}</span></div>
+            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${escapeHTML(app.applicantEmail)}</span></div>
+            <div class="detail-row"><span class="detail-label">電話</span><span class="detail-value">${escapeHTML(app.applicantPhone) || '-'}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-server"></i> 設備資訊</div>
-            <div class="detail-row"><span class="detail-label">設備名稱</span><span class="detail-value">${app.deviceName}</span></div>
-            <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${app.deviceModel || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${app.uSize}U</span></div>
-            <div class="detail-row"><span class="detail-label">預估用電</span><span class="detail-value">${app.power ? app.power + 'W' : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">IP 需求</span><span class="detail-value">${app.ipNeed === 'need' ? '需分配' : app.ipNeed === 'have' ? '已有: ' + app.existingIP : '不需要'}</span></div>
-            <div class="detail-row"><span class="detail-label">用途</span><span class="detail-value">${app.purpose}</span></div>
-            <div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${app.notes || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">設備名稱</span><span class="detail-value">${escapeHTML(app.deviceName)}</span></div>
+            <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${escapeHTML(app.deviceModel) || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${escapeHTML(app.uSize)}U</span></div>
+            <div class="detail-row"><span class="detail-label">預估用電</span><span class="detail-value">${app.power ? escapeHTML(app.power) + 'W' : '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">IP 需求</span><span class="detail-value">${app.ipNeed === 'need' ? '需分配' : app.ipNeed === 'have' ? '已有: ' + escapeHTML(app.existingIP) : '不需要'}</span></div>
+            <div class="detail-row"><span class="detail-label">用途</span><span class="detail-value">${escapeHTML(app.purpose)}</span></div>
+            <div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${escapeHTML(app.notes) || '-'}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-calendar"></i> 時程</div>
             <div class="detail-row"><span class="detail-label">申請日期</span><span class="detail-value">${formatDate(app.submitDate)}</span></div>
-            <div class="detail-row"><span class="detail-label">上架日期</span><span class="detail-value">${app.startDate}</span></div>
-            <div class="detail-row"><span class="detail-label">使用到期日</span><span class="detail-value">${app.endDate || (app.duration === 0 ? '長期' : app.duration + ' 個月')}</span></div>
+            <div class="detail-row"><span class="detail-label">上架日期</span><span class="detail-value">${escapeHTML(app.startDate)}</span></div>
+            <div class="detail-row"><span class="detail-label">使用到期日</span><span class="detail-value">${escapeHTML(app.endDate) || (app.duration === 0 ? '長期' : escapeHTML(app.duration) + ' 個月')}</span></div>
             <div class="detail-row"><span class="detail-label">希望位置</span><span class="detail-value">${app.preferCabinet !== '' ? '機櫃 ' + CABINET_NAMES[app.preferCabinet] : '不指定'}</span></div>
         </div>
         ${app.assignedCabinet !== null ? `
@@ -998,18 +998,18 @@ async function renderUserTable() {
         const roleLabel = u.role === 'admin' ? '管理員' : u.role === 'committee' ? '機房主委' : '使用者';
         const currentUser = Auth.getCurrentUser();
         const isSelf = currentUser && currentUser.uid === u.uid;
-        const unitDisplay = u.unit ? `<span class="unit-badge" style="display:inline-block;background:#e0f2fe;color:#0369a1;font-size:0.75rem;padding:2px 8px;border-radius:4px;">${u.unit}</span>` : '<span style="color:#94a3b8;font-size:0.8rem">未指定</span>';
+        const unitDisplay = u.unit ? `<span class="unit-badge" style="display:inline-block;background:#e0f2fe;color:#0369a1;font-size:0.75rem;padding:2px 8px;border-radius:4px;">${escapeHTML(u.unit)}</span>` : '<span style="color:#94a3b8;font-size:0.8rem">未指定</span>';
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><strong>${u.displayName}</strong><br><small style="color:#94a3b8">${u.email || ''}</small></td>
+            <td><strong>${escapeHTML(u.displayName)}</strong><br><small style="color:#94a3b8">${escapeHTML(u.email || '')}</small></td>
             <td>${unitDisplay}</td>
             <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
             <td class="actions-cell">
-                <button class="btn btn-primary btn-xs" onclick="editUser('${u.uid}')">
+                <button class="btn btn-primary btn-xs" onclick="editUser('${escapeHTML(u.uid)}')">
                     <i class="fas fa-edit"></i> 編輯
                 </button>
                 ${isSelf ? '' : `
-                <button class="btn btn-danger btn-xs" onclick="deleteUserConfirm('${u.uid}', '${u.displayName}')">
+                <button class="btn btn-danger btn-xs" onclick="deleteUserConfirm('${escapeHTML(u.uid)}', '${escapeHTML(u.displayName)}')">
                     <i class="fas fa-trash"></i> 刪除
                 </button>`}
             </td>
@@ -1175,10 +1175,10 @@ function renderUnitTable() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>
-                <span class="unit-color-dot" style="background:${u.color};"></span>
-                <code style="font-size:0.75rem;color:#64748b">${u.color}</code>
+                <span class="unit-color-dot" style="background:${escapeHTML(u.color)};"></span>
+                <code style="font-size:0.75rem;color:#64748b">${escapeHTML(u.color)}</code>
             </td>
-            <td><strong>${u.name}</strong></td>
+            <td><strong>${escapeHTML(u.name)}</strong></td>
             <td class="actions-cell">
                 <button class="btn btn-primary btn-xs" onclick="editUnit(${idx})">
                     <i class="fas fa-edit"></i> 編輯

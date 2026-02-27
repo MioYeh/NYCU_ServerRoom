@@ -236,19 +236,19 @@ function renderMyApplications() {
         card.innerHTML = `
             <div class="app-card-header">
                 <div>
-                    <div class="app-card-title">${app.deviceName}</div>
-                    <div class="app-card-id">#${app.id}</div>
+                    <div class="app-card-title">${escapeHTML(app.deviceName)}</div>
+                    <div class="app-card-id">#${escapeHTML(app.id)}</div>
                 </div>
-                <span class="status-badge status-${app.status}">${statusInfo.icon} ${statusInfo.label}</span>
+                <span class="status-badge status-${escapeHTML(app.status)}">${statusInfo.icon} ${statusInfo.label}</span>
             </div>
             <div class="app-card-body">
-                <div class="info-row"><span class="info-label">申請人</span><span>${app.applicantName} / ${app.applicantUnit}</span></div>
-                <div class="info-row"><span class="info-label">大小</span><span>${app.uSize}U</span></div>
-                <div class="info-row"><span class="info-label">位置</span><span>${cabinetLabel}</span></div>
+                <div class="info-row"><span class="info-label">申請人</span><span>${escapeHTML(app.applicantName)} / ${escapeHTML(app.applicantUnit)}</span></div>
+                <div class="info-row"><span class="info-label">大小</span><span>${escapeHTML(app.uSize)}U</span></div>
+                <div class="info-row"><span class="info-label">位置</span><span>${escapeHTML(cabinetLabel)}</span></div>
             </div>
             <div class="app-card-footer">
                 <span class="app-card-date"><i class="fas fa-calendar"></i> ${formatDate(app.submitDate)}</span>
-                ${app.fee > 0 ? `<span class="status-badge status-${app.paymentStatus}">${app.paymentStatus === 'paid' ? '✓ 已繳費' : '$ 待繳費 NT$' + app.fee.toLocaleString()}</span>` : ''}
+                ${app.fee > 0 ? `<span class="status-badge status-${escapeHTML(app.paymentStatus)}">${app.paymentStatus === 'paid' ? '✓ 已繳費' : '$ 待繳費 NT$' + app.fee.toLocaleString()}</span>` : ''}
             </div>
         `;
         list.appendChild(card);
@@ -265,7 +265,7 @@ function showApplyDetail(app) {
             <span class="status-badge status-${app.status}" style="font-size:0.9rem;padding:6px 16px;">
                 ${statusInfo.icon} ${statusInfo.label}
             </span>
-            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${app.id}</div>
+            <div style="color:#94a3b8;font-size:0.8rem;margin-top:6px;">申請編號 #${escapeHTML(app.id)}</div>
         </div>
         ${app.status === 'pending' && app.type !== 'renewal' ? `
         <div class="detail-section">
@@ -285,27 +285,27 @@ function showApplyDetail(app) {
         </div>` : ''}
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-user"></i> 申請人資訊</div>
-            <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${app.applicantName}</span></div>
-            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${app.applicantUnit}</span></div>
-            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${app.applicantEmail}</span></div>
-            <div class="detail-row"><span class="detail-label">電話</span><span class="detail-value">${app.applicantPhone || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">姓名</span><span class="detail-value">${escapeHTML(app.applicantName)}</span></div>
+            <div class="detail-row"><span class="detail-label">單位</span><span class="detail-value">${escapeHTML(app.applicantUnit)}</span></div>
+            <div class="detail-row"><span class="detail-label">信箱</span><span class="detail-value">${escapeHTML(app.applicantEmail)}</span></div>
+            <div class="detail-row"><span class="detail-label">電話</span><span class="detail-value">${escapeHTML(app.applicantPhone) || '-'}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-server"></i> 設備資訊</div>
-            <div class="detail-row"><span class="detail-label">設備名稱</span><span class="detail-value">${app.deviceName}</span></div>
-            <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${app.deviceModel || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${app.uSize}U</span></div>
-            <div class="detail-row"><span class="detail-label">預估用電</span><span class="detail-value">${app.power ? app.power + 'W' : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">用途</span><span class="detail-value">${app.purpose}</span></div>
-            <div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${app.notes || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">設備名稱</span><span class="detail-value">${escapeHTML(app.deviceName)}</span></div>
+            <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${escapeHTML(app.deviceModel) || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${escapeHTML(app.uSize)}U</span></div>
+            <div class="detail-row"><span class="detail-label">預估用電</span><span class="detail-value">${app.power ? escapeHTML(app.power) + 'W' : '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">用途</span><span class="detail-value">${escapeHTML(app.purpose)}</span></div>
+            <div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${escapeHTML(app.notes) || '-'}</span></div>
         </div>
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-calendar"></i> 時間 & 位置</div>
             <div class="detail-row"><span class="detail-label">申請日期</span><span class="detail-value">${formatDate(app.submitDate)}</span></div>
-            <div class="detail-row"><span class="detail-label">上架日期</span><span class="detail-value">${app.startDate}</span></div>
-            <div class="detail-row"><span class="detail-label">使用到期日</span><span class="detail-value">${app.endDate || (app.duration === 0 ? '長期' : app.duration + ' 個月')}</span></div>
-            <div class="detail-row"><span class="detail-label">指派位置</span><span class="detail-value">${app.assignedCabinet !== null ? '機櫃 ' + CABINET_NAMES[app.assignedCabinet] + ' U' + app.assignedStartU + '-U' + (app.assignedStartU + app.uSize - 1) : '尚未指派'}</span></div>
-            <div class="detail-row"><span class="detail-label">分配 IP</span><span class="detail-value">${app.assignedIP || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">上架日期</span><span class="detail-value">${escapeHTML(app.startDate)}</span></div>
+            <div class="detail-row"><span class="detail-label">使用到期日</span><span class="detail-value">${escapeHTML(app.endDate) || (app.duration === 0 ? '長期' : escapeHTML(app.duration) + ' 個月')}</span></div>
+            <div class="detail-row"><span class="detail-label">指派位置</span><span class="detail-value">${app.assignedCabinet !== null ? '機櫃 ' + CABINET_NAMES[app.assignedCabinet] + ' U' + escapeHTML(app.assignedStartU) + '-U' + (app.assignedStartU + app.uSize - 1) : '尚未指派'}</span></div>
+            <div class="detail-row"><span class="detail-label">分配 IP</span><span class="detail-value">${escapeHTML(app.assignedIP) || '-'}</span></div>
         </div>
         ${app.fee > 0 ? `
         <div class="detail-section">
@@ -317,7 +317,7 @@ function showApplyDetail(app) {
         ${app.adminNotes ? `
         <div class="detail-section">
             <div class="detail-section-title"><i class="fas fa-comment"></i> 管理員備註</div>
-            <p style="color:#475569;font-size:0.9rem;">${app.adminNotes}</p>
+            <p style="color:#475569;font-size:0.9rem;">${escapeHTML(app.adminNotes)}</p>
         </div>` : ''}
     `;
 
