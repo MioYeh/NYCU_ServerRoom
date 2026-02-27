@@ -13,6 +13,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     initPaymentPage();
     renderPaymentList();
     renderPaymentCharts();
+
+    // 當 Firebase Auth 狀態確認後，重新渲染（確保 user profile 最新）
+    document.addEventListener('auth-profile-ready', () => {
+        console.log('[payment] auth-profile-ready fired, refreshing page');
+        initPaymentPage();
+        renderPaymentList();
+        renderPaymentCharts();
+    });
+    // 如果 auth 已在 DOMContentLoaded 之前就緒，立即重新渲染
+    if (typeof Auth !== 'undefined' && Auth._profileReady) {
+        console.log('[payment] auth already resolved, refreshing page');
+        initPaymentPage();
+        renderPaymentList();
+        renderPaymentCharts();
+    }
 });
 
 // ===== 角色判斷 =====
@@ -75,19 +90,36 @@ function setPaymentFilter(filter, btn) {
 
 // ===== 取得需要繳費的申請 (approved 或 installed 且有費用) =====
 function getPayableApplications() {
+    const currentYear = new Date().getFullYear();
+    const currentYearStart = `${currentYear}-01-01`;
+
     let apps = applications.filter(a =>
         (a.status === 'approved' || a.status === 'installed') && a.fee > 0
     );
 
-    // 一般使用者只看自己的
+    // 過濾掉計費期間已在今年之前結束的申請（例如 2025 的申請不會在 2026 顯示）
+    apps = apps.filter(a => {
+        if (!a.endDate) return true; // 沒有結束日期的保留
+        return a.endDate >= currentYearStart;
+    });
+
+    // 自動補正：若 paymentStatus 未設定，視為 unpaid
+    apps.forEach(a => {
+        if (!a.paymentStatus) a.paymentStatus = 'unpaid';
+    });
+
+    // 一般使用者：顯示自己的 + 同單位的
     if (!isAdminUser()) {
         const currentUser = getCurrentPaymentUser();
         if (currentUser) {
-            apps = apps.filter(a =>
-                a.submittedBy === currentUser.uid ||
-                a.submittedBy === currentUser.username ||
-                (!a.submittedBy && a.applicantName === currentUser.displayName)
-            );
+            const currentUnit = currentUser.unit || '';
+            apps = apps.filter(a => {
+                const isMine = a.submittedBy === currentUser.uid ||
+                    a.submittedBy === currentUser.username ||
+                    (!a.submittedBy && a.applicantName === currentUser.displayName);
+                const isSameUnit = currentUnit && a.applicantUnit === currentUnit;
+                return isMine || isSameUnit;
+            });
         }
     }
 
@@ -971,15 +1003,30 @@ function formatDate(dateStr) {
 // ===== 圖表相關 (僅管理員顯示) =====
 let statusChartInstance = null;
 let unitChartInstance = null;
+let currentChartYear = new Date().getFullYear();
+
+function changeChartYear(delta) {
+    currentChartYear += delta;
+    renderPaymentCharts();
+}
 
 async function renderPaymentCharts() {
     if (!isAdminUser()) return;
 
     await loadApplications();
 
-    // 圖表需要看所有人的資料
+    const year = currentChartYear;
+    const yearLabel = document.getElementById('chartYearLabel');
+    if (yearLabel) yearLabel.textContent = `${year} 年度`;
+
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+
+    // 圖表需要看所有人的資料，並依年度篩選
     const allApps = applications.filter(a =>
-        (a.status === 'approved' || a.status === 'installed') && a.fee > 0
+        (a.status === 'approved' || a.status === 'installed') && a.fee > 0 &&
+        a.startDate && a.endDate &&
+        a.startDate <= yearEnd && a.endDate >= yearStart
     );
 
     // 檢查逾期
@@ -994,13 +1041,25 @@ async function renderPaymentCharts() {
         }
     });
 
-    // ===== 統計數據 =====
-    const totalFee = allApps.reduce((sum, a) => sum + a.fee, 0);
-    const paidFee = allApps.filter(a => a.paymentStatus === 'paid').reduce((sum, a) => sum + a.fee, 0)
-        + allApps.filter(a => a.paymentStatus === 'partial').reduce((sum, a) => sum + (a.paidAmount || 0), 0);
-    const unpaidFee = allApps.filter(a => a.paymentStatus === 'unpaid').reduce((sum, a) => sum + a.fee, 0);
-    const overdueFee = allApps.filter(a => a.paymentStatus === 'overdue').reduce((sum, a) => sum + a.fee, 0);
-    const partialUnpaidFee = allApps.filter(a => a.paymentStatus === 'partial').reduce((sum, a) => sum + getRemainingFee(a), 0);
+    // ===== 統計數據（使用年度按比例計算的費用）=====
+    let totalFee = 0, paidFee = 0, unpaidFee = 0, overdueFee = 0, partialUnpaidFee = 0;
+    allApps.forEach(a => {
+        const annualFee = calculateAnnualFeeForApp(a, year);
+        const annualPaid = calculateAnnualPaidForApp(a, year);
+        totalFee += annualFee;
+
+        if (a.paymentStatus === 'paid') {
+            paidFee += annualFee;
+        } else if (a.paymentStatus === 'partial') {
+            paidFee += annualPaid;
+            partialUnpaidFee += (annualFee - annualPaid);
+        } else if (a.paymentStatus === 'overdue') {
+            overdueFee += annualFee;
+        } else {
+            // unpaid
+            unpaidFee += annualFee;
+        }
+    });
     const outstandingFee = unpaidFee + overdueFee + partialUnpaidFee;
     const rate = totalFee > 0 ? Math.round((paidFee / totalFee) * 100) : 0;
 
@@ -1064,18 +1123,20 @@ async function renderPaymentCharts() {
         });
     }
 
-    // ===== 各單位費用長條圖 =====
+    // ===== 各單位費用長條圖（使用年度按比例計算）=====
     const unitMap = {};
     allApps.forEach(a => {
         const unit = a.applicantUnit || '未知';
         if (!unitMap[unit]) unitMap[unit] = { paid: 0, unpaid: 0 };
+        const annualFee = calculateAnnualFeeForApp(a, year);
+        const annualPaid = calculateAnnualPaidForApp(a, year);
         if (a.paymentStatus === 'paid') {
-            unitMap[unit].paid += a.fee;
+            unitMap[unit].paid += annualFee;
         } else if (a.paymentStatus === 'partial') {
-            unitMap[unit].paid += (a.paidAmount || 0);
-            unitMap[unit].unpaid += getRemainingFee(a);
+            unitMap[unit].paid += annualPaid;
+            unitMap[unit].unpaid += (annualFee - annualPaid);
         } else {
-            unitMap[unit].unpaid += a.fee;
+            unitMap[unit].unpaid += annualFee;
         }
     });
 
@@ -1238,8 +1299,12 @@ async function renderAnnualStats() {
         (a.status === 'approved' || a.status === 'installed') && a.fee > 0
     );
 
-    // 年度內有費用的申請
-    const yearApps = allApps.filter(a => calculateAnnualFeeForApp(a, year) > 0);
+    // 年度內有費用的申請（僅顯示 startDate 落在該年度的申請，避免跨年重複顯示）
+    const yearApps = allApps.filter(a => {
+        if (calculateAnnualFeeForApp(a, year) <= 0) return false;
+        const appStartYear = a.startDate ? parseInt(a.startDate.substring(0, 4)) : null;
+        return appStartYear === year;
+    });
 
     // 總統計
     let annualTotal = 0;

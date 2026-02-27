@@ -102,6 +102,15 @@
         <div class="chart-dashboard" id="chartDashboard">
             <div class="chart-header">
                 <h2><i class="fas fa-chart-pie"></i> 費用收取狀況總覽</h2>
+                <div class="annual-year-selector">
+                    <button class="btn btn-secondary btn-sm" onclick="changeChartYear(-1)">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <span class="annual-year-label" id="chartYearLabel">2026 年度</span>
+                    <button class="btn btn-secondary btn-sm" onclick="changeChartYear(1)">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
             </div>
             <div class="chart-stats-row">
                 <div class="chart-stat-card stat-total">

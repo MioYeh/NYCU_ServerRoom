@@ -17,6 +17,18 @@ function toggleSection(bodyId) {
     if (icon) icon.classList.toggle('collapsed');
 }
 
+// ===== 頂層面板切換 =====
+function switchAdminPanel(panelId, btn) {
+    // 隱藏所有面板
+    document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+    // 取消所有頂層 tab 的 active
+    document.querySelectorAll('.admin-top-tab').forEach(t => t.classList.remove('active'));
+    // 顯示目標面板
+    const panel = document.getElementById(panelId);
+    if (panel) panel.classList.add('active');
+    if (btn) btn.classList.add('active');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     initAdminPage();      // 先依角色調整 UI，避免閃爍
     await loadData();
@@ -42,6 +54,12 @@ function initAdminPage() {
         // 但保留 全部 / 已通過 / 已拒絕 / 已上架 供一般使用者查看自己的進度
         const pendingTab = document.querySelector('.tab-btn[data-filter="pending"]');
         if (pendingTab) pendingTab.style.display = 'none';
+    }
+
+    // 管理員才顯示「系統管理」頂層 tab
+    if (isAdmin) {
+        const sysTab = document.getElementById('topTabSystem');
+        if (sysTab) sysTab.style.display = '';
     }
 }
 
@@ -371,6 +389,12 @@ function updateCounts(equipApps, renewApps) {
     document.getElementById('pendingCount').textContent = `${totalPending} 待審核`;
     document.getElementById('approvedCount').textContent = `${totalApproved} 已通過`;
     document.getElementById('rejectedCount').textContent = `${totalRejected} 已拒絕`;
+
+    // 頂層 tab 計數
+    const topEquip = document.getElementById('topTabEquipCount');
+    const topRenew = document.getElementById('topTabRenewCount');
+    if (topEquip) topEquip.textContent = equipPending > 0 ? equipPending : equipAll;
+    if (topRenew) topRenew.textContent = renewPending > 0 ? renewPending : renewAll;
 }
 
 // ===== 審核詳情彈窗 =====
@@ -958,8 +982,8 @@ function initUserManagement() {
         const section = document.getElementById('systemMgmtSection');
         if (section) {
             section.style.display = 'block';
-            renderUserTable();
         }
+        renderUserTable();
     }
 }
 

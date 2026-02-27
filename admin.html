@@ -70,6 +70,21 @@
     </header>
 
     <main class="page-content">
+        <!-- 頂層分頁 Tab -->
+        <div class="admin-top-tabs">
+            <button class="admin-top-tab active" data-panel="equipPanel" onclick="switchAdminPanel('equipPanel', this)">
+                <i class="fas fa-file-alt"></i> 設備申請 <span class="admin-top-tab-count" id="topTabEquipCount">0</span>
+            </button>
+            <button class="admin-top-tab" data-panel="renewPanel" onclick="switchAdminPanel('renewPanel', this)">
+                <i class="fas fa-rotate"></i> 繳費申請 <span class="admin-top-tab-count" id="topTabRenewCount">0</span>
+            </button>
+            <button class="admin-top-tab" data-panel="systemPanel" onclick="switchAdminPanel('systemPanel', this)" id="topTabSystem" style="display:none;">
+                <i class="fas fa-cogs"></i> 系統管理
+            </button>
+        </div>
+
+        <!-- ====== 設備申請面板 ====== -->
+        <div class="admin-panel active" id="equipPanel">
         <!-- 搜尋列 -->
         <div class="admin-toolbar">
             <div class="toolbar-left"></div>
@@ -80,9 +95,6 @@
 
         <!-- 設備申請區塊 -->
         <div class="admin-section-block">
-            <div class="admin-section-title">
-                <i class="fas fa-file-alt"></i> 設備申請
-            </div>
             <div class="admin-toolbar sub-toolbar">
                 <div class="toolbar-left">
                     <div class="tab-group">
@@ -112,11 +124,12 @@
             </div>
         </div>
 
+        </div><!-- /equipPanel -->
+
+        <!-- ====== 繳費申請面板 ====== -->
+        <div class="admin-panel" id="renewPanel">
         <!-- 繳費申請區塊 -->
         <div class="admin-section-block">
-            <div class="admin-section-title">
-                <i class="fas fa-rotate"></i> 繳費申請
-            </div>
             <div class="admin-toolbar sub-toolbar">
                 <div class="toolbar-left">
                     <div class="tab-group">
@@ -143,15 +156,11 @@
             </div>
         </div>
 
-        <!-- 系統管理區域（僅管理員可見）-->
-        <div class="user-mgmt-section" id="systemMgmtSection" style="display:none">
-            <div class="user-mgmt-header" onclick="toggleSection('systemMgmtBody')">
-                <h2>
-                    <i class="fas fa-cogs"></i> 系統管理
-                    <i class="fas fa-chevron-down section-toggle-icon collapsed" id="systemMgmtBodyIcon"></i>
-                </h2>
-            </div>
-            <div class="section-collapsible collapsed" id="systemMgmtBody">
+        </div><!-- /renewPanel -->
+
+        <!-- ====== 系統管理面板 ====== -->
+        <div class="admin-panel" id="systemPanel">
+        <div id="systemMgmtSection">
                 <!-- 使用者管理 -->
                 <div class="sub-mgmt-block">
                     <div class="sub-mgmt-header">
@@ -195,8 +204,8 @@
                         </table>
                     </div>
                 </div>
-            </div>
         </div>
+        </div><!-- /systemPanel -->
     </main>
 
     <!-- 使用者新增/編輯彈窗 -->

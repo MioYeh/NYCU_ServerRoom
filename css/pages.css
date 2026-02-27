@@ -599,6 +599,11 @@
 
 .chart-header {
     margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
 }
 
 .chart-header h2 {
@@ -2080,5 +2085,83 @@
         margin: 10mm;
         size: A4;
     }
+}
+
+/* ===== Admin Top-Level Tabs ===== */
+.admin-top-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.admin-top-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 20px;
+    border: none;
+    background: white;
+    color: #64748b;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-right: 1px solid #e2e8f0;
+    position: relative;
+}
+
+.admin-top-tab:last-child {
+    border-right: none;
+}
+
+.admin-top-tab:hover {
+    background: #f8fafc;
+    color: #334155;
+}
+
+.admin-top-tab.active {
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color: white;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+}
+
+.admin-top-tab.active .admin-top-tab-count {
+    background: rgba(255,255,255,0.25);
+    color: white;
+}
+
+.admin-top-tab i {
+    font-size: 0.9rem;
+}
+
+.admin-top-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 11px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+/* Admin Panels show/hide */
+.admin-panel {
+    display: none;
+}
+
+.admin-panel.active {
+    display: block;
+    animation: fadeIn 0.25s ease;
 }
 

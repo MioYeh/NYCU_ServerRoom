@@ -12,6 +12,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadApplications();
     populateDeviceDropdown();
     renderMyRenewals();
+
+    // 當 Firebase Auth 狀態確認後，重新填入設備下拉（確保 user profile 最新）
+    document.addEventListener('auth-profile-ready', () => {
+        console.log('[renew] auth-profile-ready fired, refreshing dropdown');
+        populateDeviceDropdown();
+        renderMyRenewals();
+    });
+    // 如果 auth 已在 DOMContentLoaded 之前就緒，立即重新渲染
+    if (typeof Auth !== 'undefined' && Auth._profileReady) {
+        console.log('[renew] auth already resolved, refreshing dropdown');
+        populateDeviceDropdown();
+        renderMyRenewals();
+    }
 });
 
 // ===== 資料管理 =====
@@ -40,27 +53,41 @@ function populateDeviceDropdown() {
     if (!currentUser) return;
 
     const currentUnit = currentUser.unit || '';
+    console.log('[renew] populateDeviceDropdown:', { uid: currentUser.uid, displayName: currentUser.displayName, unit: currentUnit, totalApps: applications.length });
 
-    // 取得使用者自己的已通過/已上架設備申請（type != 'renewal'）
-    const myDevices = applications.filter(a => {
-        const isMine = a.submittedBy === currentUser.uid || 
-                       a.submittedBy === currentUser.username ||
-                       (!a.submittedBy && a.applicantName === currentUser.displayName);
-        const isActive = a.status === 'approved' || a.status === 'installed';
-        const isDevice = a.type !== 'renewal'; // 排除續約申請本身
-        return isMine && isActive && isDevice;
-    });
+    // 判斷是否為「我的」設備
+    function isMyApp(a) {
+        return a.submittedBy === currentUser.uid ||
+               a.submittedBy === currentUser.username ||
+               (!a.submittedBy && a.applicantName === currentUser.displayName);
+    }
 
-    // 取得同單位其他人的已通過/已上架設備申請
-    const sameUnitDevices = currentUnit ? applications.filter(a => {
-        const isMine = a.submittedBy === currentUser.uid || 
-                       a.submittedBy === currentUser.username ||
-                       (!a.submittedBy && a.applicantName === currentUser.displayName);
-        const isSameUnit = a.applicantUnit === currentUnit;
+    // 取得所有已通過/已上架的設備申請（排除 renewal 類型）
+    const activeDevices = applications.filter(a => {
         const isActive = a.status === 'approved' || a.status === 'installed';
         const isDevice = a.type !== 'renewal';
-        return !isMine && isSameUnit && isActive && isDevice;
-    }) : [];
+        return isActive && isDevice;
+    });
+
+    // 分類：我的設備 vs 同單位設備
+    const myDevices = [];
+    const sameUnitDevices = [];
+    const myDeviceIds = new Set();
+
+    console.log('[renew] activeDevices count:', activeDevices.length, activeDevices.map(a => ({ id: a.id, name: a.deviceName, status: a.status, unit: a.applicantUnit, submittedBy: a.submittedBy })));
+
+    activeDevices.forEach(a => {
+        const isMine = isMyApp(a);
+        const isSameUnit = currentUnit && a.applicantUnit === currentUnit;
+
+        if (isMine) {
+            myDevices.push(a);
+            myDeviceIds.add(a.id);
+        } else if (isSameUnit) {
+            sameUnitDevices.push(a);
+        }
+    });
+    console.log('[renew] myDevices:', myDevices.length, 'sameUnitDevices:', sameUnitDevices.length);
 
     // 清除現有選項（保留第一個預設選項）
     while (select.options.length > 1) select.remove(1);

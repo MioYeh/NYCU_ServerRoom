@@ -8,3 +8,6 @@
 
 # Node
 node_modules/
+
+# 敏感/工具檔案
+import-csv.html

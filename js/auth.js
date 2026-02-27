@@ -335,7 +335,10 @@ auth.onAuthStateChanged(async (firebaseUser) => {
         Auth._cachedProfile = { uid: firebaseUser.uid, ...profile };
         localStorage.setItem('bmi_current_user', JSON.stringify(Auth._cachedProfile));
         Auth._authResolved = true;
+        Auth._profileReady = true;
         Auth.handlePostAuthStateChange();
+        // 通知各頁面 auth 已就緒，可重新渲染（使用 CustomEvent 確保不受時序影響）
+        document.dispatchEvent(new CustomEvent('auth-profile-ready'));
     } else {
         Auth._cachedProfile = null;
         localStorage.removeItem('bmi_current_user');
