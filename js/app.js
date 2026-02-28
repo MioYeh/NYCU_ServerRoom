@@ -4,6 +4,7 @@
 
 // ===== 全域狀態 =====
 let devices = [];
+let ownerUnitsCache = []; // 從 Firestore 載入的所屬單位
 let ownerColorMap = {};
 let extraColorIndex = 0;
 let selectedOwner = null;
@@ -33,7 +34,20 @@ async function loadDevices() {
         devices = [...DEFAULT_DEVICES];
         await DB.saveDevices(devices);
     }
+    // 載入管理員設定的所屬單位，同步顏色
+    await loadOwnerUnits();
     buildOwnerColorMap();
+}
+
+async function loadOwnerUnits() {
+    const stored = await DB.getOwnerUnits();
+    if (stored && stored.length > 0) {
+        ownerUnitsCache = stored;
+        // 同步 OWNER_COLORS 以確保顏色一致
+        ownerUnitsCache.forEach(u => {
+            OWNER_COLORS[u.name] = u.color;
+        });
+    }
 }
 
 async function saveDevices() {
@@ -211,15 +225,35 @@ function renderOwnerFilter() {
         select.appendChild(opt);
     });
     select.value = selectedOwner || '';
+}
 
-    // 更新 datalist
-    const datalist = document.getElementById('ownerList');
-    datalist.innerHTML = '';
-    owners.forEach(owner => {
+// ===== 填充擁有者 select（新增/編輯設備表單用）=====
+function populateOwnerSelect(currentValue) {
+    const select = document.getElementById('owner');
+    if (!select) return;
+    select.innerHTML = '<option value="">-- 選擇擁有者 --</option>';
+
+    // 合併：管理員設定的所屬單位 + 現有設備中的擁有者
+    const unitNames = ownerUnitsCache.map(u => u.name);
+    const deviceOwners = [...new Set(devices.map(d => d.owner))];
+    const allOwners = [...new Set([...unitNames, ...deviceOwners])].sort();
+
+    allOwners.forEach(owner => {
         const opt = document.createElement('option');
         opt.value = owner;
-        datalist.appendChild(opt);
+        opt.textContent = owner;
+        select.appendChild(opt);
     });
+
+    // 若目前值不在清單中（例如舊資料），也加上去
+    if (currentValue && !allOwners.includes(currentValue)) {
+        const opt = document.createElement('option');
+        opt.value = currentValue;
+        opt.textContent = currentValue;
+        select.appendChild(opt);
+    }
+
+    if (currentValue) select.value = currentValue;
 }
 
 // ===== 統計 =====
@@ -404,6 +438,7 @@ function openFormPanel(cabinetIdx, startU) {
         document.getElementById('startU').value = startU;
     }
 
+    populateOwnerSelect();
     updateAvailableSlots();
     showPanel();
 }
@@ -420,7 +455,7 @@ function openFormPanelForEdit(device) {
     document.getElementById('cabinetSelect').value = device.cabinet;
     document.getElementById('startU').value = device.startU;
     document.getElementById('uSize').value = device.uSize;
-    document.getElementById('owner').value = device.owner;
+    populateOwnerSelect(device.owner);
     document.getElementById('contact').value = device.contact || '';
     document.getElementById('email').value = device.email || '';
     document.getElementById('ip').value = device.ip || '';

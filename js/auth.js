@@ -26,11 +26,18 @@ function getSecondaryAuth() {
     return secondaryApp.auth();
 }
 
+// ===== Session Timeout 設定 =====
+const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 分鐘（毫秒）
+const SESSION_CHECK_INTERVAL_MS = 60 * 1000;    // 每 60 秒檢查一次
+const SESSION_WARNING_BEFORE_MS = 5 * 60 * 1000; // 到期前 5 分鐘提醒
+
 // ===== 認證工具函式 =====
 const Auth = {
     // 內部快取：目前使用者的 profile（從 Firestore 取得）
     _cachedProfile: null,
     _authResolved: false,
+    _sessionTimer: null,
+    _warningShown: false,
 
     /**
      * 登入（使用 Firebase Auth email/password）
@@ -56,6 +63,9 @@ const Auth = {
                 this._cachedProfile = { uid, ...defaultProfile };
                 localStorage.setItem('bmi_current_user', JSON.stringify(this._cachedProfile));
             }
+            // 記錄登入時間並啟動 session timeout 計時器
+            this._recordLoginTime();
+            this._startSessionTimer();
             return { success: true, user: this._cachedProfile };
         } catch (error) {
             console.error('Auth.login error:', error);
@@ -89,9 +99,66 @@ const Auth = {
         } catch (e) {
             console.error('Auth.logout error:', e);
         }
+        this._stopSessionTimer();
         this._cachedProfile = null;
         localStorage.removeItem('bmi_current_user');
+        localStorage.removeItem('bmi_login_time');
         window.location.href = 'index.html';
+    },
+
+    // === Session Timeout 相關方法 ===
+
+    // 記錄登入時間戳
+    _recordLoginTime() {
+        localStorage.setItem('bmi_login_time', Date.now().toString());
+        this._warningShown = false;
+    },
+
+    // 取得剩餘 session 時間（毫秒），若已過期回傳 <= 0
+    _getSessionRemaining() {
+        const loginTime = localStorage.getItem('bmi_login_time');
+        if (!loginTime) return -1;
+        const elapsed = Date.now() - parseInt(loginTime, 10);
+        return SESSION_TIMEOUT_MS - elapsed;
+    },
+
+    // 啟動定期檢查 session 是否過期
+    _startSessionTimer() {
+        this._stopSessionTimer(); // 避免重複啟動
+        this._sessionTimer = setInterval(() => this._checkSession(), SESSION_CHECK_INTERVAL_MS);
+        // 立即檢查一次
+        this._checkSession();
+    },
+
+    // 停止 session 計時器
+    _stopSessionTimer() {
+        if (this._sessionTimer) {
+            clearInterval(this._sessionTimer);
+            this._sessionTimer = null;
+        }
+    },
+
+    // 檢查 session 剩餘時間
+    _checkSession() {
+        const remaining = this._getSessionRemaining();
+
+        // 沒有登入時間紀錄，略過
+        if (remaining === -1) return;
+
+        // 已過期 → 強制登出
+        if (remaining <= 0) {
+            this._stopSessionTimer();
+            alert('您的登入已逾時（超過 ' + Math.round(SESSION_TIMEOUT_MS / 3600000) + ' 小時），系統將自動登出。');
+            this.logout();
+            return;
+        }
+
+        // 即將過期 → 顯示提醒（僅一次）
+        if (remaining <= SESSION_WARNING_BEFORE_MS && !this._warningShown) {
+            this._warningShown = true;
+            const minutesLeft = Math.ceil(remaining / 60000);
+            alert('提醒：您的登入將在約 ' + minutesLeft + ' 分鐘後到期，請儲存工作進度。');
+        }
     },
 
     // 取得目前登入的使用者（同步，讀取快取/localStorage）
@@ -336,12 +403,29 @@ auth.onAuthStateChanged(async (firebaseUser) => {
         localStorage.setItem('bmi_current_user', JSON.stringify(Auth._cachedProfile));
         Auth._authResolved = true;
         Auth._profileReady = true;
+
+        // Session timeout：頁面刷新時檢查是否已過期，未過期則啟動計時器
+        const sessionRemaining = Auth._getSessionRemaining();
+        if (sessionRemaining !== -1 && sessionRemaining <= 0) {
+            // 已過期，強制登出
+            alert('您的登入已逾時（超過 ' + Math.round(SESSION_TIMEOUT_MS / 3600000) + ' 小時），系統將自動登出。');
+            Auth.logout();
+            return;
+        }
+        // 如果沒有登入時間紀錄（舊 session），補記錄一個
+        if (!localStorage.getItem('bmi_login_time')) {
+            Auth._recordLoginTime();
+        }
+        Auth._startSessionTimer();
+
         Auth.handlePostAuthStateChange();
         // 通知各頁面 auth 已就緒，可重新渲染（使用 CustomEvent 確保不受時序影響）
         document.dispatchEvent(new CustomEvent('auth-profile-ready'));
     } else {
+        Auth._stopSessionTimer();
         Auth._cachedProfile = null;
         localStorage.removeItem('bmi_current_user');
+        localStorage.removeItem('bmi_login_time');
         Auth._authResolved = true;
         Auth.handlePostAuthStateChange();
     }
