@@ -66,6 +66,23 @@ function prefillUserInfo() {
                 nameInput.readOnly = true;
                 nameInput.style.background = '#f1f5f9';
             }
+
+            const unitSelect = document.getElementById('applicantUnit');
+            const userUnit = (user.unit || '').trim();
+            const isReviewer = typeof Auth.isReviewer === 'function' && Auth.isReviewer();
+            if (unitSelect && userUnit && !isReviewer) {
+                const hasOption = Array.from(unitSelect.options).some(opt => opt.value === userUnit);
+                if (!hasOption) {
+                    const opt = document.createElement('option');
+                    opt.value = userUnit;
+                    opt.textContent = userUnit;
+                    unitSelect.appendChild(opt);
+                }
+                unitSelect.value = userUnit;
+                unitSelect.disabled = true;
+                unitSelect.style.background = '#f1f5f9';
+                unitSelect.title = '依帳號單位自動帶入';
+            }
         }
     }
 }

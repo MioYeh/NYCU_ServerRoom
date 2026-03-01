@@ -31,8 +31,13 @@ async function loadDevices() {
     if (saved && saved.length > 0) {
         devices = saved;
     } else {
-        devices = [...DEFAULT_DEVICES];
-        await DB.saveDevices(devices);
+        const isAdmin = typeof Auth !== 'undefined' && Auth.isAdmin();
+        if (isAdmin) {
+            devices = [...DEFAULT_DEVICES];
+            await DB.saveDevices(devices);
+        } else {
+            devices = [];
+        }
     }
     // 載入管理員設定的所屬單位，同步顏色
     await loadOwnerUnits();

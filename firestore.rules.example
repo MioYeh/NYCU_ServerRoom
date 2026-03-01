@@ -25,6 +25,17 @@ service cloud.firestore {
       return isAdmin() || isCommittee();
     }
 
+    function hasProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function sameUnit(unitValue) {
+      return hasProfile()
+        && unitValue is string
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.unit == unitValue;
+    }
+
     // 使用者 profile：本人可讀；本人可更新 displayName；僅 admin 可改 role 或管理他人
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
@@ -52,18 +63,55 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ===== 目前專案資料結構相容規則（array in single doc） =====
-    // collections/devices -> doc(all): {items:[...]} 仍限制 admin 可寫
-    // collections/applications -> doc(all): {items:[...]} 允許登入使用者寫入（讓一般使用者可送申請）
-    // 注意：applications 是整包陣列覆蓋，放寬為登入可寫僅是過渡方案，建議後續改為 applications/{appId}。
+    // ===== 舊路徑關閉 =====
+    // devices / applications 已完成遷移至單筆文件結構，舊路徑關閉。
     match /collections/devices {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if false;
+    }
+
+    // 新結構（建議）：每台設備一筆文件，支援同單位可見
+    match /devices/{deviceId} {
+      // admin/committee 可看全部；一般使用者可看同單位設備
+      allow read: if isReviewer() || sameUnit(resource.data.unit);
+      // 設備新增/修改/刪除由 admin 控制
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 新結構（建議）：每張申請單一筆文件
+    match /applications/{appId} {
+      // 一般使用者送件：只能送自己的，且 applicantUnit 需與個人 profile 一致
+      // reviewer（admin/committee）可建立任意申請（供資料遷移與後台流程）
+      allow create: if isReviewer()
+        || (
+          isSignedIn()
+          && request.resource.data.submittedBy == request.auth.uid
+          && sameUnit(request.resource.data.applicantUnit)
+        );
+
+      // 審核者可看全部；一般使用者可看自己的申請
+      allow read: if isReviewer()
+        || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
+
+      // reviewer 可更新任何申請；本人僅可更新自己且仍為 pending 的申請（避免審核後被修改）
+      allow update: if isReviewer()
+        || (
+          isSignedIn()
+          && resource.data.submittedBy == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.submittedBy == resource.data.submittedBy
+        );
+
+      // reviewer 可刪除任何申請；本人僅可刪除自己且仍為 pending 的申請
+      allow delete: if isReviewer()
+        || (
+          isSignedIn()
+          && resource.data.submittedBy == request.auth.uid
+          && resource.data.status == 'pending'
+        );
     }
 
     match /collections/applications {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if false;
     }
 
     match /collections/ownerUnits {
@@ -76,21 +124,25 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ===== 建議未來改版（更細權限） =====
-    // 改成 applications/{appId}, devices/{deviceId} 後，可以啟用這種模式：
-    // - 一般使用者：create 自己的 application、讀自己的 application
-    // - admin：審核/修改所有 application、管理 devices
-    // 範例（先註解保留）
-    // match /applications/{appId} {
-    //   allow create: if isSignedIn()
-    //     && request.resource.data.submittedBy == request.auth.uid;
-    //   allow read: if isAdmin()
-    //     || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
-    //   allow update, delete: if isAdmin();
-    // }
+    // ===== 建議未來改版（更細權限 + 同單位可見） =====
+    // 目標：
+    // - applications 改為 applications/{appId}
+    // - devices 改為 devices/{deviceId}
+    // - 一般使用者可看「同單位」設備，不限同一個人
+    //
+    // 假設資料欄位：
+    // - users/{uid}.unit
+    // - applications/{appId}.submittedBy, applications/{appId}.applicantUnit
+    // - devices/{deviceId}.unit
+    //
+    // 可先註解保留，待資料模型切換完成後啟用。
+
     // match /devices/{deviceId} {
-    //   allow read: if isSignedIn();
-    //   allow write: if isAdmin();
+    //   // admin/committee 可看全部；一般使用者可看同單位設備
+    //   allow read: if isReviewer() || sameUnit(resource.data.unit);
+
+    //   // 設備新增/修改/刪除由 admin 控制
+    //   allow create, update, delete: if isAdmin();
     // }
   }
 }

@@ -23,9 +23,10 @@
 | 功能模組 | 說明 |
 |----------|------|
 | **登入 / 登出** | 帳號密碼驗證，Session 管理，未登入自動跳轉 |
-| **機櫃總覽** | 8 座機櫃（A–H）×42U 視覺化呈現，依擁有者著色，使用率統計 |
+| **機櫃總覽** | 8 座機櫃（B–I）視覺化呈現（BCDE=41U、FGHI=42U），依擁有者著色，使用率統計 |
 | **設備管理** | 新增 / 編輯 / 刪除設備，位置衝突偵測，匯出 / 匯入 JSON |
 | **設備申請** | 線上填寫上架申請單，即時費用預估，追蹤申請狀態 |
+| **繳費申請（續約）** | 使用者可對已上架/已核准設備申請延期，產生待審核續約申請 |
 | **管理審核** | 管理員審核申請、指派機櫃位置、自動計算費用、確認上架 |
 | **繳費管理** | 費用圖表儀表板、部分繳費 / 繳清全部、批次繳費、逾期判斷 |
 | **使用者管理** | 管理員可新增 / 編輯 / 刪除使用者帳號 |
@@ -39,18 +40,24 @@ NYCU_Server_Room_Web/
 ├── index.html          # 登入頁面（GitHub Pages 入口）
 ├── dashboard.html      # 機櫃總覽
 ├── apply.html          # 設備上架申請
+├── renew.html          # 繳費申請（續約延期）
 ├── admin.html          # 管理員審核 + 使用者管理
 ├── payment.html        # 繳費紀錄
+├── firestore.rules.example
 ├── README.md
 ├── LICENSE
 ├── css/
 │   ├── style.css       # 全域樣式（按鈕、表單、機櫃、Modal 等）
 │   └── pages.css       # 頁面專用樣式（導覽列、登入頁、表格、徽章等）
 └── js/
+    ├── firebase-config.js         # Firebase 專案設定（實際使用）
+    ├── firebase-config.example.js # Firebase 設定範本
+    ├── db.js                      # Firestore 資料存取層
     ├── auth.js         # 認證模組（登入/登出/使用者管理/頁面守衛）
     ├── data.js         # 預設機櫃與設備資料
     ├── app.js          # 機櫃總覽頁面邏輯
     ├── apply.js        # 設備申請頁面邏輯
+    ├── renew.js        # 繳費申請（續約）頁面邏輯
     ├── admin.js        # 管理審核 + 使用者管理邏輯
     └── payment.js      # 繳費管理頁面邏輯
 ```
@@ -69,7 +76,8 @@ NYCU_Server_Room_Web/
 
 ### 2. 機櫃總覽 (`dashboard.html`)
 
-- 顯示 8 座機櫃（A–H），每座 42U
+- 顯示 8 座機櫃（B–I）
+- BCDE 每櫃 41U；FGHI 每櫃 42U
 - 每個 U 位置以擁有者顏色填色，點擊可查看設備詳情
 - 每座機櫃上方顯示使用率條（綠 / 黃 / 紅 依使用率變色）
 - 支援依擁有者篩選（下拉選單 + 圖例列點擊）
@@ -93,7 +101,14 @@ NYCU_Server_Room_Web/
 - 申請紀錄搜尋功能
 - 點擊申請卡片可查看完整詳情彈窗
 
-### 4. 管理審核 (`admin.html`)
+### 4. 繳費申請（續約）(`renew.html`)
+
+- 使用者可選擇已核准/已上架設備送出續約延期申請
+- 支援「我的設備」與「同單位設備」分組顯示
+- 即時計算延期費用（按比例計算）
+- 支援繳費方式與計畫編號欄位
+
+### 5. 管理審核 (`admin.html`)
 
 - **管理員視角**：
   - 審核申請單：核准（指派機櫃位置 + 自動計算費用）/ 拒絕（填寫拒絕原因）
@@ -108,7 +123,7 @@ NYCU_Server_Room_Web/
   - 隱藏待審核分頁、搜尋框、統計徽章
 - 分頁篩選：全部 / 待審核 / 已通過 / 已拒絕 / 已上架
 
-### 5. 繳費管理 (`payment.html`)
+### 6. 繳費管理 (`payment.html`)
 
 - **管理員視角**：
   - 費用圖表儀表板（Chart.js）：
@@ -134,6 +149,7 @@ NYCU_Server_Room_Web/
 | 角色 | 權限 |
 |------|------|
 | `admin`（管理員）| 所有功能 + 使用者管理 + 設備管理 + 審核 + 匯出匯入 |
+| `committee`（機房主委）| 可審核申請、查看全體申請與設備（無系統管理權） |
 | `user`（一般使用者）| 機櫃總覽（僅查看）、設備申請、查看自己的申請進度、個人繳費 |
 
 ### 管理員 vs 一般使用者 UI 差異
@@ -196,10 +212,13 @@ NYCU_Server_Room_Web/
   - 管理員可代為建立使用者 profile（對應後台新增使用者流程）
   - 本人僅可修改 `displayName`
   - 僅管理員可修改 `role` 或刪除帳號 profile
-- `collections/devices`：僅管理員可寫。
-- `collections/applications`：為支援一般使用者送件，範例暫採「登入即可寫」。
+- `collections/devices`：舊路徑已關閉（`allow read, write: if false;`）。
+- `applications/{appId}`：
+  - 一般使用者只能建立自己的申請（`submittedBy == request.auth.uid`）
+  - 審核者（admin/committee）可讀寫全體申請
+  - 一般使用者可讀自己的申請，且僅能修改/刪除自己 `pending` 狀態的申請
 
-> 注意：`collections/applications` 目前是整包陣列覆蓋，放寬為登入可寫僅是過渡方案。建議盡快改為 `applications/{appId}`，再用 Rules 依 `submittedBy == request.auth.uid` 精準控管。
+> 補充：`collections/applications` 舊路徑已關閉（`allow read, write: if false;`），系統已全面使用 `applications/{appId}`。
 
 
 ### Auth API 參考
@@ -211,8 +230,11 @@ NYCU_Server_Room_Web/
 | `Auth.getCurrentUser()` | 取得目前登入者 `{ uid, email, role, displayName }` |
 | `Auth.isLoggedIn()` | 是否已登入 |
 | `Auth.isAdmin()` | 是否為管理員 |
+| `Auth.isCommittee()` | 是否為機房主委 |
+| `Auth.isReviewer()` | 是否為審核者（admin 或 committee） |
 | `Auth.requireAuth()` | 認證守衛，未登入自動跳轉 |
 | `Auth.requireAdmin()` | 管理員守衛 |
+| `Auth.requireReviewer()` | 審核者守衛 |
 | `Auth.getUsers()` | 取得所有使用者列表 |
 | `Auth.addUser(email, password, role, displayName)` | 新增使用者（建立 Firebase Auth + Firestore profile） |
 | `Auth.updateUser(uid, role, displayName)` | 更新使用者角色/名稱 |
@@ -257,8 +279,9 @@ NYCU_Server_Room_Web/
 
 | Key | 說明 |
 |-----|------|
-| `collections/devices` | Firestore 文件，欄位 `items` 存設備陣列 |
-| `collections/applications` | Firestore 文件，欄位 `items` 存申請陣列 |
+| `devices/{deviceId}` | Firestore 單筆設備文件（主路徑） |
+| `collections/devices` | 舊路徑（已關閉，不再讀寫） |
+| `applications/{appId}` | Firestore 單筆申請文件（每筆申請一份文件） |
 | `users/{uid}` | Firestore 使用者 profile（`email`, `displayName`, `role`） |
 | `bmi_current_user` | localStorage 快取目前登入者（非權限判斷來源） |
 
@@ -350,7 +373,7 @@ NYCU_Server_Room_Web/
 
 ### 預設範例資料
 
-系統首次使用時載入 **48 筆設備**，分佈於 8 座機櫃（A–H），涵蓋上述 10 個擁有者，包含 GPU Server、NAS、交換器、防火牆、Kubernetes 叢集、醫學影像伺服器等各類設備。
+系統首次使用時載入 **48 筆設備**，分佈於 8 座機櫃（B–I），涵蓋上述 10 個擁有者，包含 GPU Server、NAS、交換器、防火牆、Kubernetes 叢集、醫學影像伺服器等各類設備。
 
 ---
 
