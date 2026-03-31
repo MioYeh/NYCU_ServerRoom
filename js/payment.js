@@ -1782,6 +1782,7 @@ function showReceipt(items, method, ref) {
                 </div>
                 <div class="receipt-subtitle">機房設備使用費繳費單</div>
                 <div class="receipt-meta">
+                    <span>計畫編號：F100222</span>
                     <span>繳費單編號：${receiptNo}</span>
                     <span>列印日期：${dateStr} ${timeStr}</span>
                 </div>
@@ -1903,6 +1904,7 @@ function closeReceiptModal(e) {
 
 function closeReceiptModalDirect() {
     document.getElementById('receiptModal').classList.remove('active');
+    document.getElementById('receiptContent').innerHTML = '';
 }
 
 /**
@@ -1977,6 +1979,7 @@ function openPaymentNotice(appId) {
                 </div>
                 <div class="receipt-subtitle">機房設備使用費繳費通知單</div>
                 <div class="receipt-meta">
+                    <span>計畫編號：F100222</span>
                     <span>通知單編號：${receiptNo}</span>
                     <span>列印日期：${dateStr} ${timeStr}</span>
                 </div>
