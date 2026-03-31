@@ -659,6 +659,22 @@ body {
     flex-shrink: 0;
 }
 
+/* ===== Site Footer ===== */
+.site-footer {
+    text-align: center;
+    padding: 20px 16px;
+    margin-top: 32px;
+    border-top: 1px solid var(--gray-200);
+    background: var(--gray-50);
+    color: #64748b;
+    font-size: 0.8rem;
+    line-height: 1.8;
+}
+
+.site-footer p {
+    margin: 0;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 1200px) {
     .cabinet-container {

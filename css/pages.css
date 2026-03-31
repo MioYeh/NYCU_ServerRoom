@@ -2060,7 +2060,8 @@
     }
 
     .no-print,
-    .receipt-actions {
+    .receipt-actions,
+    .site-footer {
         display: none !important;
     }
 
