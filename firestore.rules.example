@@ -88,17 +88,28 @@ service cloud.firestore {
           && sameUnit(request.resource.data.applicantUnit)
         );
 
-      // 審核者可看全部；一般使用者可看自己的申請
+      // 審核者可看全部；一般使用者可看自己的申請，以及同單位其他人的申請（供繳費申請頁列出可續約設備）
       allow read: if isReviewer()
-        || (isSignedIn() && resource.data.submittedBy == request.auth.uid);
+        || (isSignedIn() && resource.data.submittedBy == request.auth.uid)
+        || sameUnit(resource.data.applicantUnit);
 
       // reviewer 可更新任何申請；本人僅可更新自己且仍為 pending 的申請（避免審核後被修改）
+      // 另：本人對已核准/上架申請，可只更新「繳費欄位」做自報繳費
       allow update: if isReviewer()
         || (
           isSignedIn()
           && resource.data.submittedBy == request.auth.uid
           && resource.data.status == 'pending'
           && request.resource.data.submittedBy == resource.data.submittedBy
+        )
+        || (
+          isSignedIn()
+          && resource.data.submittedBy == request.auth.uid
+          && (resource.data.status == 'approved' || resource.data.status == 'installed')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'paymentStatus', 'paymentDate', 'paymentMethod', 'paymentRef',
+              'paidAmount', 'paidUpTo', 'paidAt', 'paidBy'
+            ])
         );
 
       // reviewer 可刪除任何申請；本人僅可刪除自己且仍為 pending 的申請

@@ -1840,7 +1840,7 @@
 }
 
 .receipt-wrap {
-    padding: 40px;
+    padding: 24px 32px;
     background: white;
     font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
     color: #1e293b;
@@ -1850,8 +1850,8 @@
 
 .receipt-header {
     text-align: center;
-    margin-bottom: 30px;
-    padding-bottom: 20px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
     border-bottom: 3px double #1e293b;
 }
 
@@ -1884,15 +1884,15 @@
 }
 
 .receipt-section {
-    margin-bottom: 24px;
+    margin-bottom: 14px;
 }
 
 .receipt-section-title {
     font-size: 0.95rem;
     font-weight: 700;
     color: #1e293b;
-    padding-bottom: 6px;
-    margin-bottom: 12px;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
     border-bottom: 2px solid #2563eb;
     display: flex;
     align-items: center;
@@ -1907,14 +1907,18 @@
 .receipt-info-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px 24px;
+    gap: 2px 24px;
 }
 
 .receipt-info-row {
     display: flex;
     gap: 8px;
     font-size: 0.9rem;
-    padding: 4px 0;
+    padding: 2px 0;
+}
+
+.receipt-info-row.full {
+    grid-column: 1 / -1;
 }
 
 .receipt-info-label {
@@ -1939,13 +1943,13 @@
     background: #f1f5f9;
     color: #334155;
     font-weight: 600;
-    padding: 10px 12px;
+    padding: 6px 10px;
     text-align: left;
     border: 1px solid #e2e8f0;
 }
 
 .receipt-table td {
-    padding: 10px 12px;
+    padding: 6px 10px;
     border: 1px solid #e2e8f0;
     color: #1e293b;
 }
@@ -1964,20 +1968,34 @@
 .receipt-payment-info {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px 24px;
+    gap: 2px 24px;
     margin-top: 8px;
 }
 
+.receipt-pay-method {
+    font-size: 0.84rem;
+    line-height: 1.55;
+    padding: 6px 0;
+}
+
+.receipt-pay-method-item {
+    margin-bottom: 4px;
+}
+
+.receipt-pay-method-item:last-child {
+    margin-bottom: 0;
+}
+
 .receipt-footer {
-    margin-top: 40px;
-    padding-top: 20px;
+    margin-top: 20px;
+    padding-top: 12px;
     border-top: 1px solid #e2e8f0;
 }
 
 .receipt-stamp-row {
     display: flex;
     justify-content: space-between;
-    margin-top: 40px;
+    margin-top: 28px;
 }
 
 .receipt-stamp-box {
@@ -1996,14 +2014,14 @@
 }
 
 .receipt-notice {
-    margin-top: 24px;
-    padding: 12px 16px;
+    margin-top: 14px;
+    padding: 10px 14px;
     background: #fffbeb;
     border: 1px solid #fde68a;
     border-radius: 6px;
     font-size: 0.8rem;
     color: #92400e;
-    line-height: 1.6;
+    line-height: 1.5;
 }
 
 .receipt-notice-title {
@@ -2129,6 +2147,16 @@
     .receipt-payment-info {
         gap: 2px 16px;
         margin-top: 4px;
+    }
+
+    .receipt-pay-method {
+        font-size: 0.7rem;
+        line-height: 1.42;
+        padding: 2px 0;
+    }
+
+    .receipt-pay-method-item {
+        margin-bottom: 4px;
     }
 
     .receipt-footer {

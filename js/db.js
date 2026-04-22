@@ -122,23 +122,39 @@ const DB = {
                 ? Auth.getCurrentUser()
                 : null;
 
-            let query = db.collection('applications');
-            if (!isReviewer) {
-                const uid = currentUser ? currentUser.uid : '';
-                if (!uid) return [];
-                query = query.where('submittedBy', '==', uid);
-            }
+            const appCollection = db.collection('applications');
 
-            const snapshot = await query.get();
-            if (!snapshot.empty) {
+            if (isReviewer) {
+                const snapshot = await appCollection.get();
+                if (snapshot.empty) return [];
                 const applications = [];
                 snapshot.forEach(doc => {
                     const raw = doc.data() || {};
-                    const normalized = this._normalizeApplication({ id: raw.id ?? doc.id, ...raw });
-                    applications.push(normalized);
+                    applications.push(this._normalizeApplication({ id: raw.id ?? doc.id, ...raw }));
                 });
                 return this._sortApplicationsById(applications);
             }
+
+            // 一般使用者：合併「自己送的」+「同單位」兩份查詢結果，並依 id 去重
+            const uid = currentUser ? currentUser.uid : '';
+            const currentUnit = (currentUser && currentUser.unit) ? String(currentUser.unit).trim() : '';
+            if (!uid && !currentUnit) return [];
+
+            const queries = [];
+            if (uid) queries.push(appCollection.where('submittedBy', '==', uid).get());
+            if (currentUnit) queries.push(appCollection.where('applicantUnit', '==', currentUnit).get());
+
+            const snapshots = await Promise.all(queries);
+            const seen = new Map();
+            snapshots.forEach(snap => {
+                snap.forEach(doc => {
+                    if (seen.has(doc.id)) return;
+                    const raw = doc.data() || {};
+                    seen.set(doc.id, this._normalizeApplication({ id: raw.id ?? doc.id, ...raw }));
+                });
+            });
+
+            return this._sortApplicationsById([...seen.values()]);
         } catch (e) {
             console.error('DB.getApplications error:', e);
         }
@@ -178,28 +194,84 @@ const DB = {
                 await batch.commit();
 
             } else {
-                // 一般使用者僅同步自己的申請（含刪除自己的）
+                // 一般使用者：逐筆寫入（不用 batch，方便定位失敗位置）
                 if (!uid) {
                     throw new Error('尚未登入，無法儲存申請資料');
                 }
 
                 const mine = normalizedApplications.filter(app => app.submittedBy === uid);
                 const existingMineSnapshot = await appCollection.where('submittedBy', '==', uid).get();
-                const incomingMineIds = new Set();
-
-                mine.forEach(app => {
-                    const docId = String(app.id);
-                    incomingMineIds.add(docId);
-                    batch.set(appCollection.doc(docId), app);
-                });
-
+                const existingMap = new Map();
                 existingMineSnapshot.forEach(doc => {
-                    if (!incomingMineIds.has(doc.id)) {
-                        batch.delete(doc.ref);
-                    }
+                    existingMap.set(doc.id, doc.data() || {});
                 });
 
-                await batch.commit();
+                console.log('[saveApplications] uid=', uid, 'unit=', currentUser && currentUser.unit);
+                console.log('[saveApplications] 本地 mine 共', mine.length, '筆，Firestore 已存在', existingMap.size, '筆');
+
+                const failures = [];
+                const incomingMineIds = new Set(mine.map(app => String(app.id)));
+                // 允許使用者自行改動的 payment 欄位（用於 approved/installed 申請的「我已繳費」流程）
+                const PAYMENT_SELF_FIELDS = [
+                    'paymentStatus', 'paymentDate', 'paymentMethod', 'paymentRef',
+                    'paidAmount', 'paidUpTo', 'paidAt', 'paidBy'
+                ];
+
+                for (const app of mine) {
+                    const docId = String(app.id);
+                    const existing = existingMap.get(docId);
+                    try {
+                        if (!existing) {
+                            console.log('→ create', docId, {submittedBy: app.submittedBy, applicantUnit: app.applicantUnit, status: app.status, type: app.type});
+                            await appCollection.doc(docId).set(app);
+                        } else if (existing.status === 'pending' && app.status === 'pending') {
+                            console.log('→ update pending', docId);
+                            await appCollection.doc(docId).set(app);
+                        } else if (existing.status === 'approved' || existing.status === 'installed') {
+                            // 已核准/已上架：只允許更新 payment 相關欄位
+                            const patch = {};
+                            let changed = false;
+                            PAYMENT_SELF_FIELDS.forEach(k => {
+                                const newVal = app[k] ?? null;
+                                const oldVal = existing[k] ?? null;
+                                if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
+                                    patch[k] = newVal;
+                                    changed = true;
+                                }
+                            });
+                            if (changed) {
+                                console.log('→ update payment fields', docId, Object.keys(patch));
+                                await appCollection.doc(docId).update(patch);
+                            }
+                        } else {
+                            // 其他狀態：略過
+                        }
+                    } catch (e) {
+                        console.error('✖ 寫入失敗 docId=', docId, 'code=', e.code, 'msg=', e.message, 'payload=', app);
+                        failures.push({ docId, error: e });
+                    }
+                }
+
+                // 允許一般使用者刪除「自己且 pending」且已從本地移除的申請
+                for (const [docId, existing] of existingMap.entries()) {
+                    if (incomingMineIds.has(docId)) continue;
+                    if (!existing || existing.status !== 'pending') continue;
+
+                    try {
+                        console.log('→ delete pending', docId);
+                        await appCollection.doc(docId).delete();
+                    } catch (e) {
+                        console.error('✖ 刪除失敗 docId=', docId, 'code=', e.code, 'msg=', e.message, 'payload=', existing);
+                        failures.push({ docId, error: e });
+                    }
+                }
+
+                if (failures.length > 0) {
+                    const first = failures[0].error;
+                    const err = new Error(first.message || 'write failed');
+                    err.code = first.code;
+                    throw err;
+                }
             }
         } catch (e) {
             console.error('DB.saveApplications error:', e);
@@ -208,6 +280,7 @@ const DB = {
             } else {
                 alert('儲存申請資料失敗，請檢查網路連線。');
             }
+            throw e;
         }
     },
 

@@ -272,9 +272,17 @@
                         <span class="payment-total-label">應繳金額</span>
                         <span class="payment-total-amount" id="userPayTotal">NT$ 0</span>
                     </div>
-                    <button class="btn btn-success btn-lg" id="userBatchPayBtn" onclick="openBatchPayModal()" disabled>
-                        <i class="fas fa-money-bill-wave"></i> <span id="userPayBtnText">前往繳費</span>
-                    </button>
+                    <div class="user-pay-actions" style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-lg" id="userPrintNoticeBtn" onclick="printBatchNotice()" disabled>
+                            <i class="fas fa-print"></i> 列印繳費單
+                        </button>
+                        <button class="btn btn-success btn-lg" id="userBatchPayBtn" onclick="openBatchPayModal()" disabled>
+                            <i class="fas fa-check-circle"></i> <span id="userPayBtnText">確認已繳費</span>
+                        </button>
+                    </div>
+                    <small style="display:block;margin-top:8px;color:#64748b;">
+                        <i class="fas fa-info-circle"></i> 請先列印繳費單並完成實際轉帳／繳款後，再按「確認已繳費」通知管理員入帳。
+                    </small>
                 </div>
             </div>
         </div>
@@ -314,6 +322,10 @@
                 <button class="btn-close" onclick="closePayModalDirect()">&times;</button>
             </div>
             <div class="modal-body">
+                <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin-bottom:12px;color:#9a3412;font-size:0.9rem;">
+                    <i class="fas fa-info-circle"></i>
+                    請先完成實際轉帳或繳款後再按下「我已完成繳費」。按下後系統會通知管理員對帳，管理員確認入帳後才完成整個繳費程序。
+                </div>
                 <div id="payModalInfo"></div>
                 <input type="hidden" id="payAppId" value="">
                 <input type="hidden" id="payBatchMode" value="">
@@ -323,11 +335,12 @@
                         <label for="payMethod">繳費方式 *</label>
                         <select id="payMethod" required>
                             <option value="">-- 選擇方式 --</option>
-                            <option value="transfer">銀行轉帳</option>
-                            <option value="cash">現金繳費</option>
-                            <option value="check">支票</option>
-                            <option value="budget">校內經費核銷</option>
+                            <option value="cash">現金</option>
+                            <option value="transfer">匯款(轉帳)</option>
+                            <option value="budget_transfer">年度計畫經費轉帳</option>
+                            <option value="budget">由經費報支系統核銷（所辦／楊永正老師）</option>
                         </select>
+                        <small class="form-hint" id="payMethodHint" style="display:block;margin-top:6px;color:#64748b;"></small>
                     </div>
                     <div class="form-group">
                         <label for="payRef">繳費憑證/備註</label>
@@ -335,7 +348,7 @@
                     </div>
                     <div class="form-actions-row">
                         <button type="submit" class="btn btn-success btn-lg">
-                            <i class="fas fa-check"></i> 確認繳費
+                            <i class="fas fa-check"></i> 我已完成繳費（待管理員入帳）
                         </button>
                         <button type="button" class="btn btn-secondary" onclick="closePayModalDirect()">取消</button>
                     </div>

@@ -571,6 +571,7 @@ async function handleFormSubmit(e) {
 
     const deviceData = { name, cabinet, startU, uSize, owner, contact, email, ip, description };
 
+    let createdDeviceId = null;
     if (editId) {
         // 編輯
         const idx = devices.findIndex(d => d.id === editId);
@@ -581,11 +582,80 @@ async function handleFormSubmit(e) {
         // 新增
         deviceData.id = getNextId();
         devices.push(deviceData);
+        createdDeviceId = deviceData.id;
     }
 
     await saveDevices();
+
+    // 新增設備時，同步建立一筆對應的 installed application
+    // 讓同單位使用者能在「繳費申請」頁面看到此設備並申請續約。
+    if (createdDeviceId !== null) {
+        try {
+            await syncCreateApplicationForDevice(deviceData);
+        } catch (err) {
+            console.error('同步建立 application 失敗：', err);
+        }
+    }
+
     closeFormPanel();
     render();
+}
+
+// ===== 同步：為設備建立對應的 application（installed 狀態）=====
+async function syncCreateApplicationForDevice(device) {
+    if (typeof DB === 'undefined' || typeof DB.getApplications !== 'function') return;
+
+    const existingApps = await DB.getApplications();
+    const apps = Array.isArray(existingApps) ? existingApps : [];
+
+    // 若此 device 已有對應 application（以 deviceId 關聯），不重複建立
+    if (apps.some(a => a.deviceId === device.id)) return;
+
+    const nextId = apps.length > 0
+        ? Math.max(...apps.map(a => Number(a.id) || 0)) + 1
+        : 1001;
+
+    const unit = device.unit || device.owner || '';
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    const newApp = {
+        id: nextId,
+        deviceId: device.id,
+        type: 'equipment',
+        submittedBy: '',                  // 管理員代建，無對應送件者 uid
+        applicantName: device.owner || '',
+        applicantUnit: unit,
+        applicantEmail: device.email || '',
+        applicantPhone: '',
+        deviceName: device.name,
+        deviceModel: '',
+        uSize: device.uSize,
+        power: null,
+        preferCabinet: String(device.cabinet),
+        ipNeed: device.ip ? 'existing' : 'no',
+        existingIP: device.ip || '',
+        startDate: todayStr,
+        endDate: '',                      // 由管理員日後補上，或透過續約申請設定
+        purpose: '由管理員於機櫃總覽新增設備時同步建立',
+        notes: device.description || '',
+        status: 'installed',
+        submitDate: new Date().toISOString(),
+        reviewDate: new Date().toISOString(),
+        adminNotes: '',
+        assignedCabinet: device.cabinet,
+        assignedStartU: device.startU,
+        assignedIP: device.ip || '',
+        fee: 0,
+        paymentStatus: 'unpaid',
+        paymentDate: null,
+        paymentMethod: '',
+        paymentRef: '',
+        paidAmount: 0,
+        paidUpTo: null
+    };
+
+    apps.push(newApp);
+    await DB.saveApplications(apps);
 }
 
 // ===== 刪除設備 =====

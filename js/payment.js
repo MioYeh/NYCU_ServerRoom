@@ -378,11 +378,75 @@ function recalcSelectedTotal() {
 function updateUserPayTotal(total, count) {
     const totalEl = document.getElementById('userPayTotal');
     const btn = document.getElementById('userBatchPayBtn');
+    const printBtn = document.getElementById('userPrintNoticeBtn');
     const btnText = document.getElementById('userPayBtnText');
 
     if (totalEl) totalEl.textContent = `NT$ ${total.toLocaleString()}`;
-    if (btn) btn.disabled = total <= 0;
-    if (btnText) btnText.textContent = total > 0 ? `前往繳費 NT$ ${total.toLocaleString()}` : '無待繳費用';
+
+    // 取得勾選項目，用於判斷哪些可以「確認已繳費」
+    const selectedApps = getSelectedUnpaidApps();
+    // budget / budget_transfer 方式的項目不能由使用者自報，必須管理員直接入帳
+    const selfReportable = selectedApps.filter(app =>
+        app.paymentMethod !== 'budget' && app.paymentMethod !== 'budget_transfer'
+    );
+    const hasBudgetOnly = selectedApps.length > 0 && selfReportable.length === 0;
+
+    if (printBtn) {
+        printBtn.disabled = total <= 0;
+        printBtn.title = total <= 0 ? '請先勾選項目' : `列印 ${count} 筆繳費單`;
+    }
+    if (btn) {
+        btn.disabled = total <= 0 || selfReportable.length === 0;
+        btn.title = total <= 0
+            ? '請先勾選項目'
+            : hasBudgetOnly
+                ? '所選項目為年度計畫經費／經費報支方式，由管理員直接入帳，不需自行回報'
+                : '通知管理員本次款項已完成繳費';
+    }
+    if (btnText) {
+        if (total <= 0) {
+            btnText.textContent = '確認已繳費';
+        } else if (hasBudgetOnly) {
+            btnText.textContent = '待管理員入帳（不需自報）';
+        } else if (selfReportable.length < selectedApps.length) {
+            btnText.textContent = `確認已繳費（${selfReportable.length}/${selectedApps.length} 筆）`;
+        } else {
+            btnText.textContent = `確認已繳費 NT$ ${total.toLocaleString()}`;
+        }
+    }
+}
+
+// ===== 取得使用者目前勾選的待繳申請（完整 app 物件）=====
+function getSelectedUnpaidApps() {
+    const checkboxes = document.querySelectorAll('.pay-item-check:checked');
+    const result = [];
+    checkboxes.forEach(cb => {
+        const appId = parseInt(cb.dataset.appId);
+        const app = applications.find(a => a.id === appId);
+        if (app) result.push(app);
+    });
+    return result;
+}
+
+// ===== 使用者端：列印批次繳費單（不改狀態，只是產生通知單） =====
+function printBatchNotice() {
+    const mode = document.querySelector('input[name="payMode"]:checked')?.value || 'all';
+    const payUpToMonth = mode === 'partial' ? document.getElementById('payUpToDate').value : null;
+
+    const checkedBoxes = document.querySelectorAll('.pay-item-check:checked');
+    const items = [];
+    checkedBoxes.forEach(cb => {
+        const appId = parseInt(cb.dataset.appId);
+        const fee = parseFloat(cb.dataset.fee) || 0;
+        if (fee > 0) items.push({ appId, fee, payUpToMonth });
+    });
+
+    if (items.length === 0) {
+        alert('請先勾選要列印的項目');
+        return;
+    }
+
+    openBatchPaymentNotice(items);
 }
 
 // ===== 開啟批次繳費彈窗 =====
@@ -392,28 +456,68 @@ function openBatchPayModal() {
 
     // 只取已勾選的項目
     const checkedBoxes = document.querySelectorAll('.pay-item-check:checked');
-    batchPayItems = [];
-    let totalToPay = 0;
-
+    const allCheckedItems = [];
     checkedBoxes.forEach(cb => {
         const appId = parseInt(cb.dataset.appId);
         const fee = parseFloat(cb.dataset.fee) || 0;
         if (fee > 0) {
-            batchPayItems.push({ appId, fee, payUpToMonth });
-            totalToPay += fee;
+            allCheckedItems.push({ appId, fee, payUpToMonth });
+        }
+    });
+
+    // 自動排除「年度計畫經費轉帳 / 經費報支」這兩種直接入帳方式
+    // 使用者不需要對這些做自報動作
+    const skippedItems = [];
+    batchPayItems = [];
+    let totalToPay = 0;
+
+    allCheckedItems.forEach(item => {
+        const app = applications.find(a => a.id === item.appId);
+        if (!app) return;
+        if (app.paymentMethod === 'budget' || app.paymentMethod === 'budget_transfer') {
+            skippedItems.push({ item, app });
+        } else {
+            batchPayItems.push(item);
+            totalToPay += item.fee;
         }
     });
 
     if (batchPayItems.length === 0) {
-        alert('沒有需要繳費的項目');
+        alert('所勾選的項目皆為「年度計畫經費轉帳」或「經費報支系統核銷」，由管理員直接入帳，不需自行回報。');
         return;
     }
 
     document.getElementById('payAppId').value = '';
     document.getElementById('payBatchMode').value = 'batch';
     document.getElementById('payBatchData').value = JSON.stringify(batchPayItems);
-    document.getElementById('payMethod').value = '';
-    document.getElementById('payRef').value = '';
+
+    const payMethodEl = document.getElementById('payMethod');
+    const payRefEl = document.getElementById('payRef');
+    const payMethodHintEl = document.getElementById('payMethodHint');
+
+    payMethodEl.value = '';
+    payMethodEl.disabled = false;
+    payMethodEl.required = true;
+    payRefEl.value = '';
+
+    const selectedApps = batchPayItems
+        .map(item => applications.find(a => a.id === item.appId))
+        .filter(Boolean);
+    const selectedMethods = [...new Set(selectedApps.map(a => a.paymentMethod).filter(Boolean))];
+    const allHaveMethod = selectedApps.length > 0 && selectedApps.every(a => !!a.paymentMethod);
+
+    if (allHaveMethod && selectedMethods.length === 1) {
+        const autoMethod = selectedMethods[0];
+        payMethodEl.value = autoMethod;
+        payMethodEl.disabled = true;
+        payMethodEl.required = false;
+        payMethodHintEl.textContent = '已沿用申請中的繳費方式，不需再次選擇。';
+    } else if (selectedMethods.length > 1) {
+        // 非 budget 方式間仍不一致（極少見，例：cash 混 transfer）→ 仍需使用者選一次
+        payMethodHintEl.textContent = '已勾選項目的繳費方式不一致，請統一選擇本次實際使用的繳費方式。';
+    } else {
+        payMethodHintEl.textContent = '批次繳費請在此選擇本次繳費方式。';
+    }
 
     // 組合 modal 資訊
     let infoHTML = '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:16px;">';
@@ -430,13 +534,14 @@ function openBatchPayModal() {
         </div>`;
     }
 
-    infoHTML += '<div style="max-height:200px;overflow-y:auto;margin:10px 0;">';
+    infoHTML += '<div style="max-height:200px;overflow-y:auto;margin:10px 0;border-top:1px solid #e2e8f0;">';
     batchPayItems.forEach(item => {
         const app = applications.find(a => a.id === item.appId);
         if (app) {
-            infoHTML += `<div class="detail-row" style="font-size:0.85rem;">
-                <span class="detail-label">#${escapeHTML(app.id)} ${escapeHTML(app.deviceName)}</span>
-                <span class="detail-value">NT$ ${item.fee.toLocaleString()}</span>
+            infoHTML += `<div style="display:flex;align-items:center;gap:10px;font-size:0.85rem;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+                <span style="flex:0 0 70px;color:#64748b;font-weight:600;">#${escapeHTML(app.id)}</span>
+                <span style="flex:1;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(app.deviceName)}">${escapeHTML(app.deviceName)}</span>
+                <span style="flex:0 0 auto;color:#1f2937;font-weight:600;white-space:nowrap;">NT$ ${item.fee.toLocaleString()}</span>
             </div>`;
         }
     });
@@ -446,6 +551,14 @@ function openBatchPayModal() {
         <span class="detail-label">應繳總額</span>
         <span class="detail-value">NT$ ${totalToPay.toLocaleString()}</span>
     </div></div>`;
+
+    // 若有被自動略過的 budget 項目，加註提示
+    if (skippedItems.length > 0) {
+        const skipList = skippedItems.map(s => `#${s.app.id}`).join('、');
+        infoHTML += `<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:0.85rem;">
+            <i class="fas fa-info-circle"></i> 已自動略過 ${skippedItems.length} 筆由管理員直接入帳的項目（${escapeHTML(skipList)}），本次僅回報上方 ${batchPayItems.length} 筆。
+        </div>`;
+    }
 
     document.getElementById('payModalInfo').innerHTML = infoHTML;
     document.getElementById('payModal').classList.add('active');
@@ -542,6 +655,10 @@ async function renderPaymentList() {
 
         // 入帳確認欄位
         let confirmHTML = '-';
+        const _canAdminDirectConfirm = isAdminUser()
+            && (app.paymentMethod === 'budget' || app.paymentMethod === 'budget_transfer')
+            && (app.paymentStatus === 'unpaid' || app.paymentStatus === 'overdue')
+            && !app.adminConfirmedDate;
         if (app.paymentStatus === 'paid') {
             if (app.adminConfirmedDate) {
                 confirmHTML = `
@@ -560,15 +677,37 @@ async function renderPaymentList() {
             } else {
                 confirmHTML = '<span style="color:#94a3b8;font-size:0.8rem;">待管理員確認</span>';
             }
+        } else if (_canAdminDirectConfirm) {
+            confirmHTML = `
+                <button class="btn btn-confirm btn-xs" onclick="confirmPayment(${app.id})" title="由管理員直接完成繳費與入帳">
+                    <i class="fas fa-clipboard-check"></i> 直接入帳
+                </button>
+            `;
         }
 
         let actionsHTML = '';
+        const isBudgetMethod = app.paymentMethod === 'budget' || app.paymentMethod === 'budget_transfer';
         if (app.paymentStatus === 'unpaid' || app.paymentStatus === 'overdue' || app.paymentStatus === 'partial') {
-            actionsHTML = `
-                <button class="btn btn-success btn-xs" onclick="openPayModal(${app.id})">
-                    <i class="fas fa-money-bill-wave"></i> 繳費
-                </button>
-            `;
+            if (!isAdminUser()) {
+                // 一般使用者：不在列表內操作，請使用「我的待繳費用」面板勾選批次處理
+                if (isBudgetMethod) {
+                    actionsHTML = `
+                        <span class="status-badge" style="background:#eff6ff;color:#2563eb;font-size:0.7rem;" title="此繳費方式由管理員直接確認入帳">
+                            <i class="fas fa-hourglass-half"></i> 待管理員入帳
+                        </span>
+                    `;
+                }
+                // 非 budget 使用者：不顯示任何操作按鈕，請到 panel 進行
+            } else {
+                // 管理員：可直接代為回報繳費（除了 budget 方式走直接入帳）
+                if (!isBudgetMethod) {
+                    actionsHTML = `
+                        <button class="btn btn-success btn-xs" onclick="openPayModal(${app.id})" title="代為回報繳費">
+                            <i class="fas fa-check"></i> 回報繳費
+                        </button>
+                    `;
+                }
+            }
         }
         // 已繳費或部分繳費（有 paidAmount）→ 顯示繳費單按鈕
         if (app.paymentStatus === 'paid' || (app.paymentStatus === 'partial' && app.paidAmount > 0)) {
@@ -593,6 +732,22 @@ async function renderPaymentList() {
         `;
         // 管理員可刪除繳費紀錄（已審核過的申請）
         if (isAdminUser()) {
+            // 已入帳 → 可取消入帳
+            if (app.paymentStatus === 'paid' && app.adminConfirmedDate) {
+                actionsHTML += `
+                    <button class="btn btn-warning btn-xs" onclick="unconfirmPayment(${app.id})" title="取消入帳（退回已繳待確認）">
+                        <i class="fas fa-undo"></i>
+                    </button>
+                `;
+            }
+            // 已繳但尚未入帳 → 可退回未繳
+            if (app.paymentStatus === 'paid' && !app.adminConfirmedDate) {
+                actionsHTML += `
+                    <button class="btn btn-warning btn-xs" onclick="undoPayment(${app.id})" title="退回未繳（使用者誤按時使用）">
+                        <i class="fas fa-undo"></i>
+                    </button>
+                `;
+            }
             actionsHTML += `
                 <button class="btn btn-danger btn-xs" onclick="deletePaymentRecord(${app.id})" title="刪除此筆紀錄">
                     <i class="fas fa-trash"></i>
@@ -656,11 +811,30 @@ function openPayModal(appId) {
     const app = applications.find(a => a.id === appId);
     if (!app) return;
 
+    const payMethodEl = document.getElementById('payMethod');
+    const payRefEl = document.getElementById('payRef');
+    const payMethodHintEl = document.getElementById('payMethodHint');
+
     document.getElementById('payAppId').value = appId;
     document.getElementById('payBatchMode').value = '';
     document.getElementById('payBatchData').value = '';
-    document.getElementById('payMethod').value = '';
-    document.getElementById('payRef').value = '';
+    payMethodEl.disabled = false;
+    payMethodEl.required = true;
+    payMethodEl.value = app.paymentMethod || '';
+    payRefEl.value = '';
+
+    if (app.paymentMethod) {
+        payMethodEl.disabled = true;
+        payMethodEl.required = false;
+        payMethodHintEl.textContent = '已沿用繳費申請中的繳費方式，不需再次選擇。';
+        if ((app.paymentMethod === 'budget' || app.paymentMethod === 'budget_transfer') && app.budgetProject) {
+            payRefEl.value = `計畫編號: ${app.budgetProject}`;
+        } else if (app.paymentRef) {
+            payRefEl.value = app.paymentRef;
+        }
+    } else {
+        payMethodHintEl.textContent = '此筆尚未指定繳費方式，請在此選擇。';
+    }
 
     const remaining = getRemainingFee(app);
     const effectiveStart = app.paidUpTo || app.startDate;
@@ -706,15 +880,29 @@ async function handlePaySubmit(e) {
     e.preventDefault();
 
     const batchMode = document.getElementById('payBatchMode').value;
-    const method = document.getElementById('payMethod').value;
+    const appId = parseInt(document.getElementById('payAppId').value);
+    let method = document.getElementById('payMethod').value;
     const ref = document.getElementById('payRef').value.trim();
 
     const methodLabels = {
-        transfer: '銀行轉帳',
-        cash: '現金繳費',
+        cash: '現金',
+        transfer: '匯款(轉帳)',
+        budget_transfer: '年度計畫經費轉帳',
         check: '支票',
-        budget: '校內經費核銷'
+        budget: '由經費報支系統核銷(所辦/楊永正老師)'
     };
+
+    if (!method && batchMode !== 'batch' && appId) {
+        const app = applications.find(a => a.id === appId);
+        if (app && app.paymentMethod) {
+            method = app.paymentMethod;
+        }
+    }
+
+    if (!method) {
+        alert('請選擇繳費方式');
+        return;
+    }
 
     if (batchMode === 'batch') {
         // 批次繳費
@@ -733,7 +921,11 @@ async function handleSinglePaySubmit(method, ref, methodLabels) {
 
     const remaining = getRemainingFee(app);
 
-    if (!confirm(`確認繳費？\n\n金額：NT$ ${remaining.toLocaleString()}\n方式：${methodLabels[method] || method}\n${ref ? '憑證：' + ref : ''}`)) {
+    const finalRef = ref || (((method === 'budget' || method === 'budget_transfer') && app.budgetProject)
+        ? `計畫編號: ${app.budgetProject}`
+        : (app.paymentRef || ''));
+
+    if (!confirm(`確認繳費？\n\n金額：NT$ ${remaining.toLocaleString()}\n方式：${methodLabels[method] || method}\n${finalRef ? '憑證：' + finalRef : ''}`)) {
         return;
     }
 
@@ -741,20 +933,20 @@ async function handleSinglePaySubmit(method, ref, methodLabels) {
     app.paymentStatus = 'paid';
     app.paymentDate = new Date().toISOString();
     app.paymentMethod = method;
-    app.paymentRef = ref;
+    app.paymentRef = finalRef;
     app.paidAmount = app.fee;
     app.paidUpTo = app.endDate;
+    // 稽核欄位：使用者自報繳費當下的時間 / 操作者
+    const _paidByUser = getCurrentPaymentUser();
+    app.paidAt = app.paymentDate;
+    app.paidBy = _paidByUser ? (_paidByUser.displayName || _paidByUser.username || _paidByUser.uid) : '';
 
     await saveApplications();
     closePayModalDirect();
     renderPaymentList();
 
-    // 產生繳費單
-    showReceipt([{
-        app,
-        fee: remaining,
-        payUpToMonth: null
-    }], method, ref);
+    // 不再自動彈出繳費單。使用者已先透過「列印繳費單」列印，此處只做狀態回報。
+    alert(`✅ 已回報繳費！\n\n申請 #${app.id}\n金額：NT$ ${remaining.toLocaleString()}\n\n系統已通知管理員進行入帳對帳。`);
 }
 
 // ===== 批次繳費處理 =====
@@ -771,6 +963,8 @@ async function handleBatchPaySubmit(method, ref, methodLabels) {
     }
 
     const nowISO = new Date().toISOString();
+    const _batchPaidByUser = getCurrentPaymentUser();
+    const _batchPaidByLabel = _batchPaidByUser ? (_batchPaidByUser.displayName || _batchPaidByUser.username || _batchPaidByUser.uid) : '';
 
     items.forEach(item => {
         const app = applications.find(a => a.id === item.appId);
@@ -782,6 +976,8 @@ async function handleBatchPaySubmit(method, ref, methodLabels) {
         app.paidAmount = newPaid;
         app.paymentMethod = method;
         app.paymentRef = ref;
+        app.paidAt = nowISO;
+        app.paidBy = _batchPaidByLabel;
 
         if (item.payUpToMonth) {
             // 部分繳費 → 計算繳費到日期
@@ -814,12 +1010,8 @@ async function handleBatchPaySubmit(method, ref, methodLabels) {
     closePayModalDirect();
     renderPaymentList();
 
-    // 產生繳費單
-    const receiptItems = items.map(item => {
-        const app = applications.find(a => a.id === item.appId);
-        return { app, fee: item.fee, payUpToMonth: item.payUpToMonth };
-    }).filter(i => i.app);
-    showReceipt(receiptItems, method, ref);
+    // 不再自動彈出繳費單。使用者已先列印過繳費單，此處只是狀態回報。
+    alert(`✅ 已回報 ${items.length} 筆繳費！\n\n總金額：NT$ ${totalFee.toLocaleString()}\n\n系統已通知管理員進行入帳對帳。`);
 }
 
 // ===== 繳費詳情 =====
@@ -829,10 +1021,11 @@ function openPayDetail(appId) {
 
     const content = document.getElementById('payDetailContent');
     const methodLabels = {
-        transfer: '銀行轉帳',
-        cash: '現金繳費',
+        cash: '現金',
+        transfer: '匯款(轉帳)',
+        budget_transfer: '年度計畫經費轉帳',
         check: '支票',
-        budget: '校內經費核銷'
+        budget: '由經費報支系統核銷(所辦/楊永正老師)'
     };
 
     const endDateDisplay = app.endDate || (app.duration === 0 ? '長期' : app.duration + ' 個月');
@@ -982,7 +1175,11 @@ async function confirmPayment(appId) {
     const app = applications.find(a => a.id === appId);
     if (!app) return;
 
-    if (app.paymentStatus !== 'paid') {
+    const isBudgetMethod = app.paymentMethod === 'budget' || app.paymentMethod === 'budget_transfer';
+
+    // 若為年度計畫經費/經費報支：允許在「未繳費」狀態下由管理員直接入帳
+    // 其他方式：必須使用者先回報已繳
+    if (app.paymentStatus !== 'paid' && !isBudgetMethod) {
         alert('此筆申請尚未完成繳費，無法進行入帳確認');
         return;
     }
@@ -993,10 +1190,11 @@ async function confirmPayment(appId) {
     }
 
     const methodLabels = {
-        transfer: '銀行轉帳',
-        cash: '現金繳費',
+        cash: '現金',
+        transfer: '匯款(轉帳)',
+        budget_transfer: '年度計畫經費轉帳',
         check: '支票',
-        budget: '校內經費核銷'
+        budget: '由經費報支系統核銷(所辦/楊永正老師)'
     };
 
     const confirmMsg = `確認入帳？\n\n申請編號: #${app.id}\n設備: ${app.deviceName}\n申請人: ${app.applicantName}\n金額: NT$ ${app.fee.toLocaleString()}\n繳費方式: ${methodLabels[app.paymentMethod] || app.paymentMethod || '-'}\n${app.budgetProject ? '計畫編號: ' + app.budgetProject + '\n' : ''}${app.paymentRef ? '憑證: ' + app.paymentRef : ''}`;
@@ -1004,12 +1202,73 @@ async function confirmPayment(appId) {
     if (!confirm(confirmMsg)) return;
 
     const currentUser = getCurrentPaymentUser();
-    app.adminConfirmedDate = new Date().toISOString();
+    const nowISO = new Date().toISOString();
+    // budget 方式：直接從 unpaid 跳到 paid + 已入帳
+    if (app.paymentStatus !== 'paid' && isBudgetMethod) {
+        app.paymentStatus = 'paid';
+        app.paymentDate = nowISO;
+        app.paidAmount = app.fee;
+        app.paidUpTo = app.endDate;
+        // 此情境下使用者並未自行回報，paidAt/paidBy 留空以區分
+    }
+    app.adminConfirmedDate = nowISO;
     app.adminConfirmedBy = currentUser ? (currentUser.displayName || currentUser.username || currentUser.uid) : '管理員';
 
     await saveApplications();
     renderPaymentList();
     alert(`✅ 已確認入帳！申請 #${appId} 的款項已完成最終確認。`);
+}
+
+// ===== 管理員：取消入帳（回到「已繳費待確認」狀態） =====
+async function unconfirmPayment(appId) {
+    if (!isAdminUser()) {
+        alert('只有管理員可以取消入帳');
+        return;
+    }
+    const app = applications.find(a => a.id === appId);
+    if (!app || !app.adminConfirmedDate) return;
+
+    if (!confirm(`確定取消入帳？\n\n申請編號: #${app.id}\n此筆將退回「已繳費 / 待入帳確認」狀態。`)) return;
+
+    app.adminConfirmedDate = null;
+    app.adminConfirmedBy = null;
+    await saveApplications();
+    renderPaymentList();
+    alert(`⚠️ 已取消入帳，申請 #${appId} 已退回待入帳確認。`);
+}
+
+// ===== 管理員：退回未繳（使用者誤按「我已繳費」時使用） =====
+async function undoPayment(appId) {
+    if (!isAdminUser()) {
+        alert('只有管理員可以將繳費紀錄退回未繳');
+        return;
+    }
+    const app = applications.find(a => a.id === appId);
+    if (!app) return;
+
+    if (app.paymentStatus !== 'paid') {
+        alert('此筆並非已繳狀態，無法退回。');
+        return;
+    }
+    if (app.adminConfirmedDate) {
+        alert('此筆已完成入帳確認，請先「取消入帳」後再退回未繳。');
+        return;
+    }
+
+    if (!confirm(`確定將此筆退回「未繳費」？\n\n申請編號: #${app.id}\n繳費方式: ${app.paymentMethod || '-'}\n繳費日期: ${app.paymentDate || '-'}\n\n將清除使用者自報的繳費資訊（方式/憑證/日期）。`)) return;
+
+    app.paymentStatus = 'unpaid';
+    app.paymentDate = null;
+    app.paidAmount = 0;
+    app.paidUpTo = null;
+    app.paidAt = null;
+    app.paidBy = null;
+    // 保留 app.paymentMethod（申請時即指定），避免使用者又要重選一次
+    // 但若原本沒指定過，則不動
+    app.paymentRef = '';
+    await saveApplications();
+    renderPaymentList();
+    alert(`⚠️ 已退回未繳，申請 #${appId} 可重新回報繳費。`);
 }
 
 // ===== 工具函式 =====
@@ -1547,10 +1806,11 @@ function exportPaymentCSV() {
     }
 
     const methodLabels = {
-        transfer: '銀行轉帳',
-        cash: '現金繳費',
+        cash: '現金',
+        transfer: '匯款(轉帳)',
+        budget_transfer: '年度計畫經費轉帳',
         check: '支票',
-        budget: '校內經費核銷'
+        budget: '由經費報支系統核銷(所辦/楊永正老師)'
     };
 
     const headers = [
@@ -1725,10 +1985,11 @@ function generateReceiptNo() {
  */
 function showReceipt(items, method, ref) {
     const methodLabels = {
-        transfer: '銀行轉帳',
-        cash: '現金繳費',
+        cash: '現金',
+        transfer: '匯款(轉帳)',
+        budget_transfer: '年度計畫經費轉帳',
         check: '支票',
-        budget: '校內經費核銷'
+        budget: '由經費報支系統核銷(所辦/楊永正老師)'
     };
 
     const receiptNo = generateReceiptNo();
@@ -1765,7 +2026,7 @@ function showReceipt(items, method, ref) {
         itemRows += `
             <tr>
                 <td>${idx + 1}</td>
-                <td>#${escapeHTML(app.id)}</td>
+                <td>${escapeHTML(app.id)}</td>
                 <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
                 <td>${escapeHTML(cabinetLabel)}</td>
                 <td>${escapeHTML(periodStart)} ~ ${escapeHTML(periodEnd)}</td>
@@ -1811,12 +2072,12 @@ function showReceipt(items, method, ref) {
             </div>
 
             <div class="receipt-section">
-                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 繳費明細</div>
+                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 繳費明細（共 ${items.length} 筆）</div>
                 <table class="receipt-table">
                     <thead>
                         <tr>
-                            <th style="width:40px">#</th>
-                            <th style="width:70px">編號</th>
+                            <th style="width:36px">#</th>
+                            <th style="width:58px">編號</th>
                             <th>設備名稱</th>
                             <th>機櫃位置</th>
                             <th>計費期間</th>
@@ -1833,10 +2094,6 @@ function showReceipt(items, method, ref) {
                         </tr>
                     </tfoot>
                 </table>
-            </div>
-
-            <div class="receipt-section">
-                <div class="receipt-section-title"><i class="fas fa-credit-card"></i> 繳費資訊</div>
                 <div class="receipt-payment-info">
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">繳費方式</span>
@@ -1845,14 +2102,6 @@ function showReceipt(items, method, ref) {
                     <div class="receipt-info-row">
                         <span class="receipt-info-label">憑證/備註</span>
                         <span class="receipt-info-value">${escapeHTML(ref) || '-'}</span>
-                    </div>
-                    <div class="receipt-info-row">
-                        <span class="receipt-info-label">繳費狀態</span>
-                        <span class="receipt-info-value" style="color:#16a34a;font-weight:700;">已繳費（待入帳確認）</span>
-                    </div>
-                    <div class="receipt-info-row">
-                        <span class="receipt-info-label">項目數量</span>
-                        <span class="receipt-info-value">${items.length} 筆</span>
                     </div>
                 </div>
             </div>
@@ -1865,6 +2114,30 @@ function showReceipt(items, method, ref) {
                 </div>
             </div>
 
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-receipt"></i> 收據開立資訊</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">收據抬頭</span>
+                        <span class="receipt-info-value" style="font-weight:700;">國立陽明交通大學</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">統一編號</span>
+                        <span class="receipt-info-value" style="font-weight:700;">87557573</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-headset"></i> 聯絡窗口</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row full">
+                        <span class="receipt-info-label">機房管理員</span>
+                        <span class="receipt-info-value">李威頤　分機 #66400　<a href="mailto:lwy@nycu.edu.tw">lwy@nycu.edu.tw</a></span>
+                    </div>
+                </div>
+            </div>
+
             <div class="receipt-footer">
                 <div class="receipt-stamp-row">
                     <div class="receipt-stamp-box">
@@ -1873,20 +2146,24 @@ function showReceipt(items, method, ref) {
                     </div>
                     <div class="receipt-stamp-box">
                         <div class="receipt-stamp-line"></div>
-                        <div class="receipt-stamp-label">經辦人簽章</div>
+                        <div class="receipt-stamp-label">機房管理員簽章</div>
                     </div>
                     <div class="receipt-stamp-box">
                         <div class="receipt-stamp-line"></div>
-                        <div class="receipt-stamp-label">主管簽章</div>
+                        <div class="receipt-stamp-label">出納組簽章</div>
                     </div>
                 </div>
             </div>
 
             <div class="receipt-notice">
-                <div class="receipt-notice-title"><i class="fas fa-info-circle"></i> 注意事項</div>
+                <div class="receipt-notice-title"><i class="fas fa-info-circle"></i> 注意事項（機房管委會以下代稱管委會）</div>
                 <div>1. 本繳費單僅供繳費證明與內部作業使用，非正式統一發票。</div>
                 <div>2. 繳費後請保留此繳費單作為繳費憑證，待管理員確認入帳後完成繳費程序。</div>
-                <div>3. 如有疑問，請聯繫 BMI 機房管理委員會。</div>
+                <div>3. 收費計算方式 1U = 350 元／月，依擬租賃機櫃總數計算之。</div>
+                <div>4. 收費標準請參考「國立陽明交通大學生物醫學大樓機房收費辦法」。</div>
+                <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #cbd5e1;color:#475569;">
+                    申請人及單位同意履行各項資訊服務管理要點之規定。各項服務僅作為校園行政、學術及研究用途，且須符合本校校園網路使用規範、教育部台灣學術網路使用規範、本管委會資訊安全管理制度以及國家所制訂之各式法律規章。如遭遇重大資訊安全事件或違反上述規定情節重大者，本管委會得立即暫時中止該服務。
+                </div>
             </div>
         </div>
     `;
@@ -1951,6 +2228,14 @@ function openPaymentNotice(appId) {
     const app = applications.find(a => a.id === appId);
     if (!app) return;
 
+    const methodLabels = {
+        cash: '現金',
+        transfer: '匯款(轉帳)',
+        budget_transfer: '年度計畫經費轉帳',
+        check: '支票',
+        budget: '由經費報支系統核銷(所辦/楊永正老師)'
+    };
+
     const remaining = getRemainingFee(app);
     const receiptNo = generateReceiptNo();
     const now = new Date();
@@ -1970,6 +2255,9 @@ function openPaymentNotice(appId) {
     }
 
     const endDateDisplay = app.endDate || (app.duration === 0 ? '長期' : app.duration + ' 個月');
+    const selectedMethodLabel = methodLabels[app.paymentMethod] || app.paymentMethod || '尚未指定';
+    const projectCode = String(app.budgetProject || '').trim();
+    const selectedRef = String(app.paymentRef || '').trim() || (projectCode ? `計畫編號: ${projectCode}` : '');
 
     const html = `
         <div class="receipt-wrap" id="receiptPrintArea">
@@ -2012,7 +2300,7 @@ function openPaymentNotice(appId) {
                 <table class="receipt-table">
                     <thead>
                         <tr>
-                            <th style="width:70px">編號</th>
+                            <th style="width:58px">編號</th>
                             <th>設備名稱</th>
                             <th>機櫃位置</th>
                             <th>計費期間</th>
@@ -2021,7 +2309,7 @@ function openPaymentNotice(appId) {
                     </thead>
                     <tbody>
                         <tr>
-                            <td>#${escapeHTML(app.id)}</td>
+                            <td>${escapeHTML(app.id)}</td>
                             <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
                             <td>${escapeHTML(cabinetLabel)}</td>
                             <td>${escapeHTML(app.startDate)} ~ ${escapeHTML(endDateDisplay)}</td>
@@ -2035,6 +2323,20 @@ function openPaymentNotice(appId) {
                         </tr>
                     </tfoot>
                 </table>
+                <div class="receipt-payment-info">
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">繳費方式</span>
+                        <span class="receipt-info-value">${escapeHTML(selectedMethodLabel)}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">計畫編號</span>
+                        <span class="receipt-info-value">${escapeHTML(projectCode || '-')}</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">憑證/備註</span>
+                        <span class="receipt-info-value">${escapeHTML(selectedRef || '-')}</span>
+                    </div>
+                </div>
             </div>
 
             <div class="receipt-section">
@@ -2046,11 +2348,41 @@ function openPaymentNotice(appId) {
             </div>
 
             <div class="receipt-section">
-                <div class="receipt-section-title"><i class="fas fa-university"></i> 繳費方式</div>
-                <div style="font-size:0.9rem;line-height:1.8;padding:8px 0;">
-                    <div><strong>1. 銀行轉帳</strong>：請洽機房管理委員會取得匯款帳號</div>
-                    <div><strong>2. 現金繳費</strong>：請至 BMI 所辦繳交</div>
-                    <div><strong>3. 校內經費核銷</strong>：請提供計畫編號，透過校內系統核銷</div>
+                <div class="receipt-section-title"><i class="fas fa-receipt"></i> 收據開立資訊</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">收據抬頭</span>
+                        <span class="receipt-info-value" style="font-weight:700;">國立陽明交通大學</span>
+                    </div>
+                    <div class="receipt-info-row">
+                        <span class="receipt-info-label">統一編號</span>
+                        <span class="receipt-info-value" style="font-weight:700;">87557573</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-university"></i> 繳款方式</div>
+                <div class="receipt-pay-method">
+                    <div class="receipt-pay-method-item">
+                        <strong>(A) 臨櫃繳納</strong>：請填寫繳費通知單後，前往陽明校區行政大樓一樓或傳統醫學大樓一樓聯合服務中心的出納組繳費（開立收據）。
+                    </div>
+                    <div class="receipt-pay-method-item">
+                        <strong>(B) 匯款</strong>：戶名「國立陽明交通大學 403 專戶」；銀行「玉山銀行天母分行」（分行代碼 0163）；帳號「0163 9510 00028」；請於匯款單備註欄填入「研究室主持人姓名、生物醫學大樓機房使用費與計畫代碼 F100222」，並於匯款當天來電通知，將匯款明細（匯款帳戶的後五碼、金額等）以電子郵件回傳，確認匯款無誤，俟開立收據後，可親取或公文傳遞。
+                    </div>
+                    <div class="receipt-pay-method-item">
+                        <strong>(C) 計畫轉帳</strong>：請購系統／計畫經費（付款方式請選：內部轉帳）；並下載「校內單位經費移撥申請表」，以公文傳送各相關單位核章。
+                    </div>
+                </div>
+            </div>
+
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-headset"></i> 聯絡窗口</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row full">
+                        <span class="receipt-info-label">機房管理員</span>
+                        <span class="receipt-info-value">李威頤　分機 #66400　<a href="mailto:lwy@nycu.edu.tw">lwy@nycu.edu.tw</a></span>
+                    </div>
                 </div>
             </div>
 
@@ -2062,20 +2394,23 @@ function openPaymentNotice(appId) {
                     </div>
                     <div class="receipt-stamp-box">
                         <div class="receipt-stamp-line"></div>
-                        <div class="receipt-stamp-label">經辦人簽章</div>
+                        <div class="receipt-stamp-label">機房管理員簽章</div>
                     </div>
                     <div class="receipt-stamp-box">
                         <div class="receipt-stamp-line"></div>
-                        <div class="receipt-stamp-label">主管簽章</div>
+                        <div class="receipt-stamp-label">出納組簽章</div>
                     </div>
                 </div>
             </div>
 
             <div class="receipt-notice">
-                <div class="receipt-notice-title"><i class="fas fa-exclamation-triangle"></i> 注意事項</div>
-                <div>1. 請於繳費期限內完成繳費，逾期將影響設備使用權益。</div>
-                <div>2. 繳費完成後請至繳費紀錄頁面回報繳費資訊，以利管理員確認入帳。</div>
-                <div>3. 如有疑問，請聯繫 BMI 機房管理委員會。</div>
+                <div class="receipt-notice-title"><i class="fas fa-exclamation-triangle"></i> 注意事項（機房管委會以下代稱管委會）</div>
+                <div>1. 填寫完畢後，請交由機房管理員簽章，以確認繳費資料無誤。</div>
+                <div>2. 請帶繳費單至出納組繳費，繳費收據請留存，繳費單請回擲機房管理員存查。</div>
+                <div>3. 收費標準請參考「國立陽明交通大學生物醫學大樓機房收費辦法」。</div>
+                <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #cbd5e1;color:#475569;">
+                    申請人及單位同意履行各項資訊服務管理要點之規定。各項服務僅作為校園行政、學術及研究用途，且須符合本校校園網路使用規範、教育部台灣學術網路使用規範、本管委會資訊安全管理制度以及國家所制訂之各式法律規章。如遭遇重大資訊安全事件或違反上述規定情節重大者，本管委會得立即暫時中止該服務。
+                </div>
             </div>
         </div>
     `;
@@ -2084,3 +2419,139 @@ function openPaymentNotice(appId) {
     document.getElementById('receiptModal').classList.add('active');
 }
 
+/**
+ * 批次產生待繳費通知單（多筆一張單）
+ * @param {Array<{appId:number, fee:number, payUpToMonth?:string}>} items
+ */
+function openBatchPaymentNotice(items) {
+    if (!items || items.length === 0) return;
+    if (items.length === 1) return openPaymentNotice(items[0].appId);
+
+    const methodLabels = {
+        cash: '現金', transfer: '匯款(轉帳)', budget_transfer: '年度計畫經費轉帳',
+        check: '支票', budget: '由經費報支系統核銷(所辦/楊永正老師)'
+    };
+
+    const apps = items.map(it => ({ item: it, app: applications.find(a => a.id === it.appId) })).filter(x => x.app);
+    if (apps.length === 0) return;
+
+    const first = apps[0].app;
+    const receiptNo = generateReceiptNo();
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const timeStr = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    const totalFee = apps.reduce((s, x) => s + (x.item.fee || 0), 0);
+
+    let deadlineStr = '-';
+    const deadlines = apps.map(x => x.app.reviewDate).filter(Boolean)
+        .map(d => { const dd = new Date(d); dd.setDate(dd.getDate() + 30); return dd; });
+    if (deadlines.length > 0) {
+        deadlines.sort((a, b) => a - b);
+        deadlineStr = deadlines[0].toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    }
+
+    const methods = [...new Set(apps.map(x => x.app.paymentMethod).filter(Boolean))];
+    const methodDisplay = methods.length === 0 ? '尚未指定'
+        : methods.length === 1 ? (methodLabels[methods[0]] || methods[0])
+        : methods.map(m => methodLabels[m] || m).join('、');
+    const projectCodes = [...new Set(apps.map(x => String(x.app.budgetProject || '').trim()).filter(Boolean))];
+    const projectCodeDisplay = projectCodes.length === 0 ? '-' : projectCodes.join('、');
+
+    let itemRows = '';
+    apps.forEach((x, idx) => {
+        const app = x.app;
+        const it = x.item;
+        const cabinetLabel = app.assignedCabinet !== null
+            ? `${CABINET_NAMES[app.assignedCabinet]} / U${app.assignedStartU}-U${app.assignedStartU + app.uSize - 1}`
+            : '-';
+        const periodStart = app.paidUpTo || app.startDate;
+        let periodEnd;
+        if (it.payUpToMonth) {
+            const parts = it.payUpToMonth.split('-');
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]);
+            const lastDay = new Date(year, month, 0).getDate();
+            periodEnd = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+        } else {
+            periodEnd = app.endDate || '-';
+        }
+        itemRows += `<tr>
+            <td>${idx + 1}</td>
+            <td>${escapeHTML(app.id)}</td>
+            <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
+            <td>${escapeHTML(cabinetLabel)}</td>
+            <td>${escapeHTML(periodStart)} ~ ${escapeHTML(periodEnd)}</td>
+            <td class="text-right">NT$ ${(it.fee || 0).toLocaleString()}</td>
+        </tr>`;
+    });
+
+    const html = `
+        <div class="receipt-wrap" id="receiptPrintArea">
+            <div class="receipt-header">
+                <div class="receipt-logo"><i class="fas fa-server"></i> 國立陽明交通大學 生醫資訊研究所</div>
+                <div class="receipt-subtitle">機房設備使用費繳費通知單</div>
+                <div class="receipt-meta">
+                    <span>計畫編號：F100222</span>
+                    <span>通知單編號：${receiptNo}</span>
+                    <span>列印日期：${dateStr} ${timeStr}</span>
+                </div>
+            </div>
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-user"></i> 繳費人資訊</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row"><span class="receipt-info-label">姓　　名</span><span class="receipt-info-value">${escapeHTML(first.applicantName || '-')}</span></div>
+                    <div class="receipt-info-row"><span class="receipt-info-label">所屬單位</span><span class="receipt-info-value">${escapeHTML(first.applicantUnit || '-')}</span></div>
+                    <div class="receipt-info-row"><span class="receipt-info-label">電子信箱</span><span class="receipt-info-value">${escapeHTML(first.applicantEmail || '-')}</span></div>
+                    <div class="receipt-info-row"><span class="receipt-info-label">繳費期限</span><span class="receipt-info-value" style="color:#dc2626;font-weight:700;">${deadlineStr}</span></div>
+                </div>
+            </div>
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 費用明細（共 ${apps.length} 筆）</div>
+                <table class="receipt-table">
+                    <thead><tr><th style="width:36px">#</th><th style="width:58px">編號</th><th>設備名稱</th><th>機櫃位置</th><th>計費期間</th><th style="width:120px" class="text-right">金額</th></tr></thead>
+                    <tbody>${itemRows}</tbody>
+                    <tfoot><tr><td colspan="5" class="text-right">應繳總額</td><td class="text-right">NT$ ${totalFee.toLocaleString()}</td></tr></tfoot>
+                </table>
+                <div class="receipt-payment-info">
+                    <div class="receipt-info-row"><span class="receipt-info-label">繳費方式</span><span class="receipt-info-value">${escapeHTML(methodDisplay)}</span></div>
+                    <div class="receipt-info-row"><span class="receipt-info-label">計畫編號</span><span class="receipt-info-value">${escapeHTML(projectCodeDisplay)}</span></div>
+                </div>
+            </div>
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-calculator"></i> 費率說明</div>
+                <div class="receipt-info-row"><span class="receipt-info-label">計費標準</span><span class="receipt-info-value">每 U 每月 NT$ ${PRICE_PER_U_PER_MONTH} 元，不足一個月按日數比例計算</span></div>
+            </div>
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-receipt"></i> 收據開立資訊</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row"><span class="receipt-info-label">收據抬頭</span><span class="receipt-info-value" style="font-weight:700;">國立陽明交通大學</span></div>
+                    <div class="receipt-info-row"><span class="receipt-info-label">統一編號</span><span class="receipt-info-value" style="font-weight:700;">87557573</span></div>
+                </div>
+            </div>
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-university"></i> 繳款方式</div>
+                <div class="receipt-pay-method">
+                    <div class="receipt-pay-method-item"><strong>(A) 臨櫃繳納</strong>：請填寫繳費通知單後，前往陽明校區行政大樓一樓或傳統醫學大樓一樓聯合服務中心的出納組繳費（開立收據）。</div>
+                    <div class="receipt-pay-method-item"><strong>(B) 匯款</strong>：戶名「國立陽明交通大學 403 專戶」；銀行「玉山銀行天母分行」（分行代碼 0163）；帳號「0163 9510 00028」；請於匯款單備註欄填入「研究室主持人姓名、生物醫學大樓機房使用費與計畫代碼 F100222」。</div>
+                    <div class="receipt-pay-method-item"><strong>(C) 計畫轉帳</strong>：請購系統／計畫經費（付款方式請選：內部轉帳）；並下載「校內單位經費移撥申請表」，以公文傳送各相關單位核章。</div>
+                </div>
+            </div>
+            <div class="receipt-section">
+                <div class="receipt-section-title"><i class="fas fa-headset"></i> 聯絡窗口</div>
+                <div class="receipt-info-grid">
+                    <div class="receipt-info-row full"><span class="receipt-info-label">機房管理員</span><span class="receipt-info-value">李威頤　分機 #66400　<a href="mailto:lwy@nycu.edu.tw">lwy@nycu.edu.tw</a></span></div>
+                </div>
+            </div>
+            <div class="receipt-footer">
+                <div class="receipt-stamp-row">
+                    <div class="receipt-stamp-box"><div class="receipt-stamp-line"></div><div class="receipt-stamp-label">繳費人簽章</div></div>
+                    <div class="receipt-stamp-box"><div class="receipt-stamp-line"></div><div class="receipt-stamp-label">機房管理員簽章</div></div>
+                    <div class="receipt-stamp-box"><div class="receipt-stamp-line"></div><div class="receipt-stamp-label">出納組簽章</div></div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('receiptContent').innerHTML = html;
+    document.getElementById('receiptModal').classList.add('active');
+}

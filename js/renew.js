@@ -40,10 +40,17 @@ async function saveApplications() {
     await DB.saveApplications(applications);
 }
 
+function requiresProjectCodeForMethod(method) {
+    return method === 'budget' || method === 'budget_transfer';
+}
+
 function getNextAppId() {
-    return applications.length > 0 
-        ? Math.max(...applications.map(a => a.id)) + 1 
-        : 1001;
+    // 以時間戳+亂數產生全域唯一數字 ID，避免不同單位看不到的文件發生 docId 碰撞
+    const localMax = applications.length > 0
+        ? Math.max(...applications.map(a => Number(a.id) || 0))
+        : 1000;
+    const tsId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    return Math.max(localMax + 1, tsId);
 }
 
 // ===== 填入設備下拉選單（顯示自己的 + 同單位的已通過/已上架設備）=====
@@ -89,8 +96,12 @@ function populateDeviceDropdown() {
     });
     console.log('[renew] myDevices:', myDevices.length, 'sameUnitDevices:', sameUnitDevices.length);
 
-    // 清除現有選項（保留第一個預設選項）
-    while (select.options.length > 1) select.remove(1);
+    // 清除現有選項（移除所有 option 與 optgroup，只保留第一個預設 option）
+    // 注意：select.remove(i) 只會移除 <option>，不會清掉空的 <optgroup>，
+    // 若直接用 select.options.length 迴圈會殘留空 optgroup 標籤，造成重複的禁用字樣。
+    const firstOption = select.querySelector('option');
+    select.innerHTML = '';
+    if (firstOption) select.appendChild(firstOption);
 
     if (myDevices.length === 0 && sameUnitDevices.length === 0) {
         const opt = document.createElement('option');
@@ -188,7 +199,7 @@ function onPayMethodChanged() {
     const projectGroup = document.getElementById('budgetProjectGroup');
     const projectInput = document.getElementById('renewBudgetProject');
 
-    if (method === 'budget') {
+    if (requiresProjectCodeForMethod(method)) {
         projectGroup.style.display = '';
         projectInput.required = true;
     } else {
@@ -272,10 +283,12 @@ async function handleRenewSubmit(e) {
         return;
     }
 
-    if (payMethod === 'budget' && !budgetProject) {
-        alert('選擇校內經費核銷時，請填寫計畫編號');
+    if (requiresProjectCodeForMethod(payMethod) && !budgetProject) {
+        alert('選擇年度計畫經費轉帳或由經費報支系統核銷時，請填寫計畫編號');
         return;
     }
+
+    const requiresProjectCode = requiresProjectCodeForMethod(payMethod);
 
     const originalApp = applications.find(a => a.id === appId);
     if (!originalApp) {
@@ -291,15 +304,21 @@ async function handleRenewSubmit(e) {
     const extensionStartStr = extensionStart.toISOString().split('T')[0];
     const feeResult = calculateProRatedFee(extensionStartStr, newEndDate, originalApp.uSize);
 
+    // 以「目前登入使用者」的 profile 為準填入 applicant 欄位；
+    // applicantUnit 必須與 users/{uid}.unit 完全一致，否則會被 Firestore rules 擋下（sameUnit 檢查）。
+    const applicantUnit = (currentUser && currentUser.unit) ? String(currentUser.unit).trim() : (originalApp.applicantUnit || '');
+    const applicantName = (currentUser && currentUser.displayName) ? currentUser.displayName : (originalApp.applicantName || '');
+    const applicantEmail = (currentUser && currentUser.email) ? currentUser.email : (originalApp.applicantEmail || '');
+
     // 建立繳費申請（類型為 renewal）
     const renewalApp = {
         id: getNextAppId(),
         type: 'renewal',                    // 標記為繳費申請
         originalAppId: originalApp.id,       // 關聯原始設備申請
         submittedBy: currentUser ? currentUser.uid : '',
-        applicantName: originalApp.applicantName,
-        applicantUnit: originalApp.applicantUnit,
-        applicantEmail: originalApp.applicantEmail,
+        applicantName: applicantName,
+        applicantUnit: applicantUnit,
+        applicantEmail: applicantEmail,
         applicantPhone: originalApp.applicantPhone || '',
         deviceName: originalApp.deviceName,
         deviceModel: originalApp.deviceModel || '',
@@ -326,14 +345,21 @@ async function handleRenewSubmit(e) {
         paymentStatus: 'unpaid',
         paymentDate: null,
         paymentMethod: payMethod,
-        paymentRef: payMethod === 'budget' ? `計畫編號: ${budgetProject}` : '',
-        budgetProject: payMethod === 'budget' ? budgetProject : '',
+        paymentRef: requiresProjectCode ? `計畫編號: ${budgetProject}` : '',
+        budgetProject: requiresProjectCode ? budgetProject : '',
         paidAmount: 0,
         paidUpTo: null
     };
 
     applications.push(renewalApp);
-    await saveApplications();
+    try {
+        await saveApplications();
+    } catch (e) {
+        // 失敗時把剛加入的本地資料移除，避免 UI 誤判
+        const idx = applications.indexOf(renewalApp);
+        if (idx >= 0) applications.splice(idx, 1);
+        return;
+    }
 
     // 顯示成功訊息
     showRenewSuccess();
@@ -492,8 +518,16 @@ async function deleteRenewalApplication(appId, evt) {
 
     const idx = applications.findIndex(a => a.id === appId);
     if (idx !== -1) {
-        applications.splice(idx, 1);
-        await saveApplications();
+        const removed = applications.splice(idx, 1)[0];
+        try {
+            await saveApplications();
+        } catch (e) {
+            // 寫入失敗時回滾本地狀態，避免 UI 顯示已刪除但後端仍存在
+            applications.splice(idx, 0, removed);
+            return;
+        }
+
+        await loadApplications();
         // 關閉詳情彈窗（如果開著的話）
         closeRenewDetailDirect();
         renderMyRenewals();
@@ -540,7 +574,7 @@ function showRenewDetail(app) {
             <div class="detail-row"><span class="detail-label">繳費狀態</span><span class="detail-value"><span class="status-badge status-${app.paymentStatus}">${app.paymentStatus === 'paid' ? '已繳費' : app.paymentStatus === 'partial' ? '部分繳費' : '待繳費'}</span></span></div>
             ${app.paymentDate ? `<div class="detail-row"><span class="detail-label">繳費日期</span><span class="detail-value">${formatDate(app.paymentDate)}</span></div>` : ''}
             ${app.paymentMethod ? `<div class="detail-row"><span class="detail-label">繳費方式</span><span class="detail-value">${{
-                transfer: '銀行轉帳', cash: '現金繳費', check: '支票', budget: '校內經費核銷'
+                cash: '現金', transfer: '匯款(轉帳)', budget_transfer: '年度計畫經費轉帳', check: '支票', budget: '由經費報支系統核銷(所辦／楊永正老師)'
             }[app.paymentMethod] || app.paymentMethod}</span></div>` : ''}
             ${app.budgetProject ? `<div class="detail-row"><span class="detail-label">計畫編號</span><span class="detail-value" style="font-weight:600;color:#7c3aed;">${escapeHTML(app.budgetProject)}</span></div>` : ''}
         </div>

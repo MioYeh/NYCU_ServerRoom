@@ -131,9 +131,12 @@ async function saveApplications() {
 }
 
 function getNextAppId() {
-    return applications.length > 0 
-        ? Math.max(...applications.map(a => a.id)) + 1 
-        : 1001;
+    // 以時間戳+亂數產生全域唯一數字 ID，避免不同單位看不到的文件發生 docId 碰撞
+    const localMax = applications.length > 0
+        ? Math.max(...applications.map(a => Number(a.id) || 0))
+        : 1000;
+    const tsId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    return Math.max(localMax + 1, tsId);
 }
 
 // ===== 送出申請 =====
