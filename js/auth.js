@@ -310,7 +310,7 @@ const Auth = {
     async addUser(email, password, role, displayName, unit) {
         try {
             // 透過 secondaryAuth 建立帳號，不會影響主實例的 auth.currentUser
-            // const secondaryAuthInstance = getSecondaryAuth();
+            const secondaryAuthInstance = getSecondaryAuth();
             // const credential = await secondaryAuthInstance.createUserWithEmailAndPassword(email, password);
             // const newUid = credential.user.uid;
 
