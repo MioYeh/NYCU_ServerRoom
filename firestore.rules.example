@@ -130,6 +130,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 密碼操作稽核事件：使用者可寫入自己的事件，僅管理員可讀
+    match /password_events/{eventId} {
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'eventType', 'status', 'errorCode',
+          'userAgent', 'clientAt', 'createdAt'
+        ]);
+      allow read: if isAdmin();
+      allow update, delete: if false;
+    }
+
     match /collections/{docId} {
       allow read: if isSignedIn();
       allow write: if false;

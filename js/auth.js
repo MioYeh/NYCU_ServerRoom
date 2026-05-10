@@ -92,6 +92,140 @@ const Auth = {
         }
     },
 
+    _validatePasswordStrength(password) {
+        if (!password || password.length < 10) {
+            return { valid: false, message: '新密碼至少需要 10 個字元' };
+        }
+        if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+            return { valid: false, message: '新密碼需同時包含英文大寫、英文小寫與數字' };
+        }
+        return { valid: true, message: '' };
+    },
+
+    _getPasswordStrengthInfo(password) {
+        const checks = {
+            length: !!password && password.length >= 10,
+            lower: /[a-z]/.test(password || ''),
+            upper: /[A-Z]/.test(password || ''),
+            number: /[0-9]/.test(password || '')
+        };
+        const score = Object.values(checks).filter(Boolean).length;
+
+        let level = 'empty';
+        let label = '尚未輸入';
+        if (password) {
+            if (score <= 1) {
+                level = 'weak';
+                label = '強度：弱';
+            } else if (score <= 2) {
+                level = 'medium';
+                label = '強度：中';
+            } else if (score === 3) {
+                level = 'good';
+                label = '強度：良好';
+            } else {
+                level = 'strong';
+                label = '強度：強';
+            }
+        }
+
+        return { checks, score, level, label };
+    },
+
+    async logPasswordEvent(eventType, status, extra = {}) {
+        const currentUser = auth.currentUser;
+        if (!currentUser) return { success: false, skipped: true };
+
+        const payload = {
+            uid: currentUser.uid,
+            email: currentUser.email || '',
+            eventType: eventType || 'unknown',
+            status: status || 'unknown',
+            errorCode: extra.errorCode || '',
+            userAgent: (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '',
+            clientAt: new Date().toISOString(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        try {
+            await db.collection('password_events').add(payload);
+            return { success: true };
+        } catch (error) {
+            console.warn('Auth.logPasswordEvent warning:', error);
+            return { success: false, message: error.message || 'audit write failed' };
+        }
+    },
+
+    // 忘記密碼：寄送重設密碼信
+    async sendPasswordReset(email) {
+        const safeMessage = '若此信箱已註冊，系統已寄出重設密碼信，請至信箱收信。';
+        const normalizedEmail = (email || '').trim();
+        if (!normalizedEmail) {
+            return { success: false, message: '請先輸入電子郵件' };
+        }
+
+        try {
+            await auth.sendPasswordResetEmail(normalizedEmail);
+            return { success: true, message: safeMessage };
+        } catch (error) {
+            console.error('Auth.sendPasswordReset error:', error);
+            if (error.code === 'auth/user-not-found') {
+                return { success: true, message: safeMessage };
+            }
+            switch (error.code) {
+                case 'auth/invalid-email':
+                    return { success: false, message: '電子郵件格式不正確' };
+                case 'auth/too-many-requests':
+                    return { success: false, message: '嘗試次數過多，請稍後再試' };
+                case 'auth/network-request-failed':
+                    return { success: false, message: '網路連線失敗，請檢查網路' };
+                default:
+                    return { success: false, message: '寄送重設密碼信失敗，請稍後再試' };
+            }
+        }
+    },
+
+    // 已登入使用者自行修改密碼
+    async changeMyPassword(currentPassword, newPassword) {
+        const currentUser = auth.currentUser;
+        if (!currentUser || !currentUser.email) {
+            return { success: false, message: '目前未登入，請重新登入後再試' };
+        }
+
+        const passwordCheck = this._validatePasswordStrength(newPassword);
+        if (!passwordCheck.valid) {
+            return { success: false, message: passwordCheck.message };
+        }
+
+        try {
+            const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, currentPassword);
+            await currentUser.reauthenticateWithCredential(credential);
+            await currentUser.updatePassword(newPassword);
+            this._recordLoginTime();
+            await this.logPasswordEvent('change_password', 'success');
+            return { success: true, message: '密碼已更新成功' };
+        } catch (error) {
+            console.error('Auth.changeMyPassword error:', error);
+            await this.logPasswordEvent('change_password', 'failed', { errorCode: error.code || 'unknown' });
+            switch (error.code) {
+                case 'auth/wrong-password':
+                case 'auth/invalid-credential':
+                    return { success: false, message: '目前密碼不正確' };
+                case 'auth/weak-password':
+                    return { success: false, message: '新密碼強度不足，請提高複雜度' };
+                case 'auth/requires-recent-login':
+                case 'auth/user-token-expired':
+                    return { success: false, message: '登入狀態已過期，請重新登入後再試' };
+                case 'auth/too-many-requests':
+                    return { success: false, message: '嘗試次數過多，請稍後再試' };
+                case 'auth/network-request-failed':
+                    return { success: false, message: '網路連線失敗，請檢查網路' };
+                default:
+                    return { success: false, message: error.message || '修改密碼失敗' };
+            }
+        }
+    },
+
     // 登出
     async logout() {
         try {
@@ -403,6 +537,191 @@ const Auth = {
     }
 };
 
+function ensureChangePasswordModal() {
+    if (document.getElementById('changePasswordModal')) return;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'changePasswordModal';
+    modal.setAttribute('onclick', 'closeChangePasswordModal(event)');
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> 修改密碼</h3>
+                <button class="btn btn-small btn-close" onclick="closeChangePasswordModal()">✕</button>
+            </div>
+            <form onsubmit="handleChangePasswordSubmit(event)">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="changePwdCurrent">目前密碼</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="changePwdCurrent" required autocomplete="current-password" placeholder="輸入目前密碼">
+                            <button type="button" class="toggle-password" onclick="toggleChangePasswordVisibility('changePwdCurrent','changePwdCurrentIcon')">
+                                <i class="fas fa-eye" id="changePwdCurrentIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="changePwdNew">新密碼</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="changePwdNew" required autocomplete="new-password" placeholder="至少 10 碼，含大小寫英文與數字">
+                            <button type="button" class="toggle-password" onclick="toggleChangePasswordVisibility('changePwdNew','changePwdNewIcon')">
+                                <i class="fas fa-eye" id="changePwdNewIcon"></i>
+                            </button>
+                        </div>
+                        <div class="password-strength-wrap" id="changePwdStrengthWrap">
+                            <div class="password-strength-bar-bg">
+                                <div class="password-strength-bar-fill empty" id="changePwdStrengthBar"></div>
+                            </div>
+                            <div class="password-strength-text" id="changePwdStrengthText">強度：尚未輸入</div>
+                            <div class="password-rule-list">
+                                <span class="password-rule-item" id="changePwdRuleLength"><i class="fas fa-circle"></i> 至少 10 個字元</span>
+                                <span class="password-rule-item" id="changePwdRuleUpper"><i class="fas fa-circle"></i> 包含英文大寫</span>
+                                <span class="password-rule-item" id="changePwdRuleLower"><i class="fas fa-circle"></i> 包含英文小寫</span>
+                                <span class="password-rule-item" id="changePwdRuleNumber"><i class="fas fa-circle"></i> 包含數字</span>
+                            </div>
+                        </div>
+                        <div class="form-hint"><i class="fas fa-shield-alt"></i> 建議避免使用與舊密碼相似的內容</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="changePwdConfirm">確認新密碼</label>
+                        <div class="password-wrapper">
+                            <input type="password" id="changePwdConfirm" required autocomplete="new-password" placeholder="再次輸入新密碼">
+                            <button type="button" class="toggle-password" onclick="toggleChangePasswordVisibility('changePwdConfirm','changePwdConfirmIcon')">
+                                <i class="fas fa-eye" id="changePwdConfirmIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="login-error" id="changePwdError" style="display:none;margin-bottom:0;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeChangePasswordModal()">取消</button>
+                    <button type="submit" class="btn btn-primary" id="changePwdSubmitBtn">
+                        <i class="fas fa-save"></i> 更新密碼
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+function openChangePasswordModal() {
+    ensureChangePasswordModal();
+    const modal = document.getElementById('changePasswordModal');
+    const errorEl = document.getElementById('changePwdError');
+    const form = modal ? modal.querySelector('form') : null;
+    const newPwdInput = document.getElementById('changePwdNew');
+
+    if (newPwdInput && !newPwdInput.dataset.strengthBound) {
+        newPwdInput.addEventListener('input', (event) => {
+            renderChangePasswordStrength(event.target.value);
+        });
+        newPwdInput.dataset.strengthBound = '1';
+    }
+
+    if (form) form.reset();
+    if (errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+    }
+    renderChangePasswordStrength('');
+    if (modal) modal.classList.add('active');
+}
+
+function closeChangePasswordModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    const modal = document.getElementById('changePasswordModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function toggleChangePasswordVisibility(inputId, iconId) {
+    const input = document.getElementById(inputId);
+    const icon = document.getElementById(iconId);
+    if (!input || !icon) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+}
+
+function setChangePasswordError(message) {
+    const errorEl = document.getElementById('changePwdError');
+    if (!errorEl) return;
+    errorEl.style.display = 'flex';
+    errorEl.innerHTML = `<i class="fas fa-exclamation-circle"></i><span>${escapeHTML(message)}</span>`;
+}
+
+function renderChangePasswordStrength(password) {
+    const strengthBar = document.getElementById('changePwdStrengthBar');
+    const strengthText = document.getElementById('changePwdStrengthText');
+    const ruleLength = document.getElementById('changePwdRuleLength');
+    const ruleUpper = document.getElementById('changePwdRuleUpper');
+    const ruleLower = document.getElementById('changePwdRuleLower');
+    const ruleNumber = document.getElementById('changePwdRuleNumber');
+
+    if (!strengthBar || !strengthText || !ruleLength || !ruleUpper || !ruleLower || !ruleNumber) return;
+
+    const info = Auth._getPasswordStrengthInfo(password);
+    const width = Math.round((info.score / 4) * 100);
+
+    strengthBar.style.width = `${width}%`;
+    strengthBar.className = `password-strength-bar-fill ${info.level}`;
+    strengthText.textContent = info.label;
+
+    ruleLength.classList.toggle('ok', info.checks.length);
+    ruleUpper.classList.toggle('ok', info.checks.upper);
+    ruleLower.classList.toggle('ok', info.checks.lower);
+    ruleNumber.classList.toggle('ok', info.checks.number);
+}
+
+async function handleChangePasswordSubmit(e) {
+    e.preventDefault();
+
+    const currentPassword = document.getElementById('changePwdCurrent').value;
+    const newPassword = document.getElementById('changePwdNew').value;
+    const confirmPassword = document.getElementById('changePwdConfirm').value;
+    const submitBtn = document.getElementById('changePwdSubmitBtn');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        setChangePasswordError('請完整填寫所有欄位');
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        setChangePasswordError('新密碼與確認密碼不一致');
+        return;
+    }
+    if (currentPassword === newPassword) {
+        setChangePasswordError('新密碼不可與目前密碼相同');
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 更新中...';
+
+    try {
+        const result = await Auth.changeMyPassword(currentPassword, newPassword);
+        if (!result.success) {
+            setChangePasswordError(result.message || '修改密碼失敗');
+            return;
+        }
+
+        closeChangePasswordModal();
+        localStorage.setItem('bmi_password_changed_notice', '1');
+        await Auth.logout();
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-save"></i> 更新密碼';
+    }
+}
+
 // ===== 監聽 Firebase Auth 狀態變更 =====
 auth.onAuthStateChanged(async (firebaseUser) => {
     if (firebaseUser) {
@@ -464,6 +783,9 @@ function initAuthNav() {
         userBlock.className = 'nav-user';
         userBlock.innerHTML = `
             <span class="nav-user-name"><i class="fas fa-user-circle"></i> ${escapeHTML(user.displayName)}</span>
+            <button class="nav-action-btn" onclick="openChangePasswordModal()" title="修改密碼">
+                <i class="fas fa-key"></i> 修改密碼
+            </button>
             <button class="nav-logout-btn" onclick="Auth.logout()" title="登出">
                 <i class="fas fa-sign-out-alt"></i> 登出
             </button>
@@ -473,6 +795,7 @@ function initAuthNav() {
         if (topNav) {
             topNav.appendChild(userBlock);
         }
+        ensureChangePasswordModal();
     }
 }
 

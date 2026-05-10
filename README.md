@@ -22,7 +22,7 @@
 
 | 功能模組 | 說明 |
 |----------|------|
-| **登入 / 登出** | 帳號密碼驗證，Session 管理，未登入自動跳轉 |
+| **登入 / 登出 / 密碼管理** | 帳號密碼驗證，忘記密碼寄信、登入後修改密碼（含強度檢查），Session 管理，未登入自動跳轉 |
 | **機櫃總覽** | 8 座機櫃（B–I）視覺化呈現（BCDE=41U、FGHI=42U），依擁有者著色，使用率統計 |
 | **設備管理** | 新增 / 編輯 / 刪除設備，位置衝突偵測，匯出 / 匯入 JSON |
 | **設備申請** | 線上填寫上架申請單，即時費用預估，追蹤申請狀態 |
@@ -53,7 +53,7 @@ NYCU_Server_Room_Web/
     ├── firebase-config.js         # Firebase 專案設定（實際使用）
     ├── firebase-config.example.js # Firebase 設定範本
     ├── db.js                      # Firestore 資料存取層
-    ├── auth.js         # 認證模組（登入/登出/使用者管理/頁面守衛）
+    ├── auth.js         # 認證模組（登入/登出/忘記密碼/修改密碼/使用者管理/頁面守衛）
     ├── data.js         # 預設機櫃與設備資料
     ├── app.js          # 機櫃總覽頁面邏輯
     ├── apply.js        # 設備申請頁面邏輯
@@ -70,9 +70,17 @@ NYCU_Server_Room_Web/
 
 - 帳號 / 密碼登入表單
 - 密碼顯示 / 隱藏切換
+- 忘記密碼（輸入 Email 後寄送 Firebase 重設密碼信）
 - 登入失敗顯示錯誤訊息 + 抖動動畫
 - 按鈕 Loading 狀態（模擬短暫延遲）
 - 已登入者自動導向機櫃總覽
+
+### 補充：導覽列密碼管理（全站登入後頁面）
+
+- 右上角提供「修改密碼」按鈕
+- 需輸入目前密碼 + 新密碼 + 確認新密碼
+- 新密碼即時顯示強度條與規則勾選（至少 10 碼，需含大小寫英文與數字）
+- 修改成功後會強制登出並導回登入頁，提示使用新密碼重新登入
 
 ### 2. 機櫃總覽 (`dashboard.html`)
 
@@ -217,6 +225,10 @@ NYCU_Server_Room_Web/
   - 一般使用者只能建立自己的申請（`submittedBy == request.auth.uid`）
   - 審核者（admin/committee）可讀寫全體申請
   - 一般使用者可讀自己的申請，且僅能修改/刪除自己 `pending` 狀態的申請
+- `password_events/{eventId}`：
+  - 登入者可建立自己的密碼操作稽核事件（如 `change_password` 成功/失敗）
+  - 僅管理員可讀取稽核紀錄
+  - 禁止更新與刪除
 
 > 補充：`collections/applications` 舊路徑已關閉（`allow read, write: if false;`），系統已全面使用 `applications/{appId}`。
 
@@ -226,6 +238,8 @@ NYCU_Server_Room_Web/
 | 方法 | 說明 |
 |------|------|
 | `Auth.login(email, password)` | 登入，回傳 `{ success, user/message }` |
+| `Auth.sendPasswordReset(email)` | 寄送忘記密碼重設信（安全訊息，不透露帳號是否存在） |
+| `Auth.changeMyPassword(currentPassword, newPassword)` | 目前登入者修改自己的密碼（含 re-auth） |
 | `Auth.logout()` | 登出並導向登入頁 |
 | `Auth.getCurrentUser()` | 取得目前登入者 `{ uid, email, role, displayName }` |
 | `Auth.isLoggedIn()` | 是否已登入 |
@@ -239,6 +253,14 @@ NYCU_Server_Room_Web/
 | `Auth.addUser(email, password, role, displayName)` | 新增使用者（建立 Firebase Auth + Firestore profile） |
 | `Auth.updateUser(uid, role, displayName)` | 更新使用者角色/名稱 |
 | `Auth.deleteUser(uid)` | 刪除使用者 Firestore profile |
+
+### 密碼安全流程
+
+1. **忘記密碼（未登入）**：在 `index.html` 輸入 Email 後點「忘記密碼」，由 Firebase 發送重設信。
+2. **修改密碼（已登入）**：點導覽列「修改密碼」，先以目前密碼重新驗證（reauthenticate），再更新新密碼。
+3. **強度檢查**：新密碼需滿足至少 10 碼、包含大寫英文、小寫英文、數字。
+4. **強制重新登入**：密碼更新成功後立即登出，回到登入頁並提示使用新密碼登入。
+5. **稽核紀錄**：寫入 `password_events`（不包含明文密碼或密碼雜湊）。
 
 ---
 
@@ -283,7 +305,9 @@ NYCU_Server_Room_Web/
 | `collections/devices` | 舊路徑（已關閉，不再讀寫） |
 | `applications/{appId}` | Firestore 單筆申請文件（每筆申請一份文件） |
 | `users/{uid}` | Firestore 使用者 profile（`email`, `displayName`, `role`） |
+| `password_events/{eventId}` | Firestore 密碼操作稽核事件（成功/失敗、時間、錯誤代碼等，不含密碼） |
 | `bmi_current_user` | localStorage 快取目前登入者（非權限判斷來源） |
+| `bmi_password_changed_notice` | localStorage 一次性提示旗標（密碼更新後導回登入頁顯示通知） |
 
 ### 設備資料結構
 
