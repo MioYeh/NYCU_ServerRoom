@@ -311,20 +311,40 @@ const Auth = {
         try {
             // 透過 secondaryAuth 建立帳號，不會影響主實例的 auth.currentUser
             const secondaryAuthInstance = getSecondaryAuth();
+            // const credential = await secondaryAuthInstance.createUserWithEmailAndPassword(email, password);
+            // const newUid = credential.user.uid;
+
+            // // 在 Firestore 中建立使用者 profile
+            // await db.collection('users').doc(newUid).set({
+            //     email,
+            //     role,
+            //     displayName,
+            //     unit: unit || ''
+            // });
+
+            // // 立即登出 secondary 實例（僅用於建立帳號）
+            // await secondaryAuthInstance.signOut();
+            
             const credential = await secondaryAuthInstance.createUserWithEmailAndPassword(email, password);
             const newUid = credential.user.uid;
-
+            
             // 在 Firestore 中建立使用者 profile
-            await db.collection('users').doc(newUid).set({
-                email,
-                role,
-                displayName,
-                unit: unit || ''
-            });
-
+            try {
+                await db.collection('users').doc(newUid).set({
+                    email,
+                    role,
+                    displayName,
+                    unit: unit || ''
+                });
+            } catch (firestoreError) {
+                // Firestore 寫入失敗，rollback：刪掉剛建的 Auth 帳號
+                await credential.user.delete();
+                throw firestoreError;
+            }
+            
             // 立即登出 secondary 實例（僅用於建立帳號）
             await secondaryAuthInstance.signOut();
-
+            
             return { success: true, message: '使用者已建立' };
         } catch (error) {
             console.error('Auth.addUser error:', error);
