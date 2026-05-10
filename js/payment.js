@@ -2420,7 +2420,7 @@ function openPaymentNotice(appId) {
 }
 
 /**
- * 批次產生待繳費通知單（多筆一張單）
+ * 批次產生待繳費通知單（依繳費方式分組，每種方式各一張）
  * @param {Array<{appId:number, fee:number, payUpToMonth?:string}>} items
  */
 function openBatchPaymentNotice(items) {
@@ -2435,57 +2435,71 @@ function openBatchPaymentNotice(items) {
     const apps = items.map(it => ({ item: it, app: applications.find(a => a.id === it.appId) })).filter(x => x.app);
     if (apps.length === 0) return;
 
-    const first = apps[0].app;
-    const receiptNo = generateReceiptNo();
     const now = new Date();
     const dateStr = now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
     const timeStr = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-    const totalFee = apps.reduce((s, x) => s + (x.item.fee || 0), 0);
-
-    let deadlineStr = '-';
-    const deadlines = apps.map(x => x.app.reviewDate).filter(Boolean)
-        .map(d => { const dd = new Date(d); dd.setDate(dd.getDate() + 30); return dd; });
-    if (deadlines.length > 0) {
-        deadlines.sort((a, b) => a - b);
-        deadlineStr = deadlines[0].toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
-    }
-
-    const methods = [...new Set(apps.map(x => x.app.paymentMethod).filter(Boolean))];
-    const methodDisplay = methods.length === 0 ? '尚未指定'
-        : methods.length === 1 ? (methodLabels[methods[0]] || methods[0])
-        : methods.map(m => methodLabels[m] || m).join('、');
-    const projectCodes = [...new Set(apps.map(x => String(x.app.budgetProject || '').trim()).filter(Boolean))];
-    const projectCodeDisplay = projectCodes.length === 0 ? '-' : projectCodes.join('、');
-
-    let itemRows = '';
-    apps.forEach((x, idx) => {
-        const app = x.app;
-        const it = x.item;
-        const cabinetLabel = app.assignedCabinet !== null
-            ? `${CABINET_NAMES[app.assignedCabinet]} / U${app.assignedStartU}-U${app.assignedStartU + app.uSize - 1}`
-            : '-';
-        const periodStart = app.paidUpTo || app.startDate;
-        let periodEnd;
-        if (it.payUpToMonth) {
-            const parts = it.payUpToMonth.split('-');
-            const year = parseInt(parts[0]);
-            const month = parseInt(parts[1]);
-            const lastDay = new Date(year, month, 0).getDate();
-            periodEnd = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
-        } else {
-            periodEnd = app.endDate || '-';
-        }
-        itemRows += `<tr>
-            <td>${idx + 1}</td>
-            <td>${escapeHTML(app.id)}</td>
-            <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
-            <td>${escapeHTML(cabinetLabel)}</td>
-            <td>${escapeHTML(periodStart)} ~ ${escapeHTML(periodEnd)}</td>
-            <td class="text-right">NT$ ${(it.fee || 0).toLocaleString()}</td>
-        </tr>`;
+    const groupedByMethod = new Map();
+    apps.forEach(record => {
+        const methodKey = record.app.paymentMethod || '__UNSPECIFIED__';
+        if (!groupedByMethod.has(methodKey)) groupedByMethod.set(methodKey, []);
+        groupedByMethod.get(methodKey).push(record);
     });
 
-    const html = `
+    const methodGroups = Array.from(groupedByMethod.entries());
+
+    const html = methodGroups.map(([methodKey, groupApps], groupIndex) => {
+        const first = groupApps[0].app;
+        const receiptNo = generateReceiptNo();
+        const totalFee = groupApps.reduce((s, x) => s + (x.item.fee || 0), 0);
+
+        let deadlineStr = '-';
+        const deadlines = groupApps.map(x => x.app.reviewDate).filter(Boolean)
+            .map(d => {
+                const dd = new Date(d);
+                dd.setDate(dd.getDate() + 30);
+                return dd;
+            });
+        if (deadlines.length > 0) {
+            deadlines.sort((a, b) => a - b);
+            deadlineStr = deadlines[0].toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        }
+
+        const methodDisplay = methodKey === '__UNSPECIFIED__'
+            ? '尚未指定'
+            : (methodLabels[methodKey] || methodKey);
+
+        const projectCodes = [...new Set(groupApps.map(x => String(x.app.budgetProject || '').trim()).filter(Boolean))];
+        const projectCodeDisplay = projectCodes.length === 0 ? '-' : projectCodes.join('、');
+
+        let itemRows = '';
+        groupApps.forEach((x, idx) => {
+            const app = x.app;
+            const it = x.item;
+            const cabinetLabel = app.assignedCabinet !== null
+                ? `${CABINET_NAMES[app.assignedCabinet]} / U${app.assignedStartU}-U${app.assignedStartU + app.uSize - 1}`
+                : '-';
+            const periodStart = app.paidUpTo || app.startDate;
+            let periodEnd;
+            if (it.payUpToMonth) {
+                const parts = it.payUpToMonth.split('-');
+                const year = parseInt(parts[0]);
+                const month = parseInt(parts[1]);
+                const lastDay = new Date(year, month, 0).getDate();
+                periodEnd = `${year}-${String(month).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+            } else {
+                periodEnd = app.endDate || '-';
+            }
+            itemRows += `<tr>
+                <td>${idx + 1}</td>
+                <td>${escapeHTML(app.id)}</td>
+                <td>${escapeHTML(app.deviceName)} (${escapeHTML(app.uSize)}U)</td>
+                <td>${escapeHTML(cabinetLabel)}</td>
+                <td>${escapeHTML(periodStart)} ~ ${escapeHTML(periodEnd)}</td>
+                <td class="text-right">NT$ ${(it.fee || 0).toLocaleString()}</td>
+            </tr>`;
+        });
+
+        return `
         <div class="receipt-wrap" id="receiptPrintArea">
             <div class="receipt-header">
                 <div class="receipt-logo"><i class="fas fa-server"></i> 國立陽明交通大學 生醫資訊研究所</div>
@@ -2506,7 +2520,7 @@ function openBatchPaymentNotice(items) {
                 </div>
             </div>
             <div class="receipt-section">
-                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 費用明細（共 ${apps.length} 筆）</div>
+                <div class="receipt-section-title"><i class="fas fa-list-alt"></i> 費用明細（${escapeHTML(methodDisplay)}，共 ${groupApps.length} 筆）</div>
                 <table class="receipt-table">
                     <thead><tr><th style="width:36px">#</th><th style="width:58px">編號</th><th>設備名稱</th><th>機櫃位置</th><th>計費期間</th><th style="width:120px" class="text-right">金額</th></tr></thead>
                     <tbody>${itemRows}</tbody>
@@ -2550,7 +2564,9 @@ function openBatchPaymentNotice(items) {
                 </div>
             </div>
         </div>
+        ${groupIndex < methodGroups.length - 1 ? '<div style="page-break-after:always;height:0;"></div>' : ''}
     `;
+    }).join('');
 
     document.getElementById('receiptContent').innerHTML = html;
     document.getElementById('receiptModal').classList.add('active');
