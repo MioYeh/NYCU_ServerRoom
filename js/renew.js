@@ -11,21 +11,44 @@ let applications = [];
 document.addEventListener('DOMContentLoaded', async () => {
     await loadApplications();
     populateDeviceDropdown();
+    prefillRenewApplicantName();
     renderMyRenewals();
 
     // 當 Firebase Auth 狀態確認後，重新填入設備下拉（確保 user profile 最新）
-    document.addEventListener('auth-profile-ready', () => {
+    document.addEventListener('auth-profile-ready', async () => {
         console.log('[renew] auth-profile-ready fired, refreshing dropdown');
+        // 若初次載入時 auth 尚未就緒導致 applications 為空，需補載一次
+        if (applications.length === 0) await loadApplications();
         populateDeviceDropdown();
+        prefillRenewApplicantName();
         renderMyRenewals();
     });
     // 如果 auth 已在 DOMContentLoaded 之前就緒，立即重新渲染
     if (typeof Auth !== 'undefined' && Auth._profileReady) {
         console.log('[renew] auth already resolved, refreshing dropdown');
+        if (applications.length === 0) await loadApplications();
         populateDeviceDropdown();
+        prefillRenewApplicantName();
         renderMyRenewals();
     }
 });
+
+// ===== 申請人資訊預填 =====
+function prefillRenewApplicantName() {
+    const currentUser = (typeof Auth !== 'undefined' && Auth.getCurrentUser()) || null;
+    if (!currentUser) return;
+
+    const nameInput = document.getElementById('renewApplicantName');
+    const unitInput = document.getElementById('renewApplicantUnitDisplay');
+
+    // 只在欄位為空時帶入（避免使用者已修改的值被覆蓋）
+    if (nameInput && !nameInput.value) {
+        nameInput.value = currentUser.displayName || '';
+    }
+    if (unitInput) {
+        unitInput.value = currentUser.unit || '';
+    }
+}
 
 // ===== 資料管理 =====
 async function loadApplications() {
@@ -272,6 +295,12 @@ async function handleRenewSubmit(e) {
     const notes = document.getElementById('renewNotes').value.trim();
     const payMethod = document.getElementById('renewPayMethod').value;
     const budgetProject = document.getElementById('renewBudgetProject').value.trim();
+    const submittedApplicantName = document.getElementById('renewApplicantName').value.trim();
+
+    if (!submittedApplicantName) {
+        alert('請填寫申請人姓名');
+        return;
+    }
 
     if (!appId || !newEndDate) {
         alert('請選擇設備並填寫新的到期日');
@@ -304,10 +333,10 @@ async function handleRenewSubmit(e) {
     const extensionStartStr = extensionStart.toISOString().split('T')[0];
     const feeResult = calculateProRatedFee(extensionStartStr, newEndDate, originalApp.uSize);
 
-    // 以「目前登入使用者」的 profile 為準填入 applicant 欄位；
     // applicantUnit 必須與 users/{uid}.unit 完全一致，否則會被 Firestore rules 擋下（sameUnit 檢查）。
+    // applicantName 使用者可自行修改（代送情境），submittedBy 維持登入帳號 uid 作為稽核依據。
     const applicantUnit = (currentUser && currentUser.unit) ? String(currentUser.unit).trim() : (originalApp.applicantUnit || '');
-    const applicantName = (currentUser && currentUser.displayName) ? currentUser.displayName : (originalApp.applicantName || '');
+    const applicantName = submittedApplicantName;
     const applicantEmail = (currentUser && currentUser.email) ? currentUser.email : (originalApp.applicantEmail || '');
 
     // 建立繳費申請（類型為 renewal）
@@ -370,6 +399,8 @@ async function handleRenewSubmit(e) {
     document.getElementById('renewPayMethod').value = '';
     document.getElementById('renewBudgetProject').value = '';
     document.getElementById('budgetProjectGroup').style.display = 'none';
+    // 重置後重新帶入申請人姓名
+    prefillRenewApplicantName();
 
     // 重新載入並渲染
     await loadApplications();
@@ -388,12 +419,17 @@ function showRenewSuccess() {
 
 // ===== 重置表單 =====
 function resetRenewForm() {
+    document.getElementById('renewForm').reset();
     document.getElementById('renewDeviceInfo').style.display = 'none';
     document.getElementById('renewFeeEstimateBox').style.display = 'none';
     document.getElementById('renewSubmitBtn').disabled = true;
     document.getElementById('renewPayMethod').value = '';
     document.getElementById('renewBudgetProject').value = '';
     document.getElementById('budgetProjectGroup').style.display = 'none';
+    // 重置後重新帶入申請人姓名（清除使用者修改）
+    const nameInput = document.getElementById('renewApplicantName');
+    if (nameInput) nameInput.value = '';
+    prefillRenewApplicantName();
 }
 
 // ===== 渲染我的繳費申請紀錄 =====
