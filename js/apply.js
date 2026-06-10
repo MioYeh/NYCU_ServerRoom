@@ -21,7 +21,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('applyEndDate').addEventListener('change', updateFeeEstimate);
     document.getElementById('applyUSize').addEventListener('change', updateFeeEstimate);
     updateFeeEstimate();
+    // 監聽 IP 申請狀況變化以顯示/隱藏 IP 資訊欄位
+    document.getElementById('applyIP').addEventListener('change', updateIPFieldVisibility);
+    updateIPFieldVisibility();
 });
+
+// ===== IP 申請狀況欄位顯示控制 =====
+function updateIPFieldVisibility() {
+    const ipNeed = document.getElementById('applyIP').value;
+    const group = document.getElementById('existingIPGroup');
+    const input = document.getElementById('applyExistingIP');
+    if (ipNeed === 'applied') {
+        group.style.display = '';
+        input.required = true;
+    } else {
+        group.style.display = 'none';
+        input.required = false;
+    }
+}
 
 // ===== 動態載入所屬單位下拉選單 =====
 async function populateUnitDropdown() {
