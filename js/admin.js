@@ -454,7 +454,7 @@ function openReviewModal(appId) {
             <div class="detail-row"><span class="detail-label">型號</span><span class="detail-value">${escapeHTML(app.deviceModel) || '-'}</span></div>
             <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">${escapeHTML(app.uSize)}U</span></div>
             <div class="detail-row"><span class="detail-label">預估用電</span><span class="detail-value">${app.power ? escapeHTML(app.power) + 'W' : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">IP 需求</span><span class="detail-value">${app.ipNeed === 'need' ? '需分配' : app.ipNeed === 'have' ? '已有: ' + escapeHTML(app.existingIP) : '不需要'}</span></div>
+            <div class="detail-row"><span class="detail-label">IP申請狀況</span><span class="detail-value">${app.ipNeed === 'applied' ? '已申請: ' + (escapeHTML(app.existingIP) || '-') : app.ipNeed === 'not_applied' ? '尚未申請' : '不需要'}</span></div>
             <div class="detail-row"><span class="detail-label">用途</span><span class="detail-value">${escapeHTML(app.purpose)}</span></div>
             <div class="detail-row"><span class="detail-label">備註</span><span class="detail-value">${escapeHTML(app.notes) || '-'}</span></div>
         </div>
